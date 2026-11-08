@@ -54,7 +54,7 @@ Responses endpoint.
 ## Quota and check-in
 
 - Quota = `/theos` + `/get_usage_summary` for the signed-in account. Results are cached
-  in-process (success 5 min; other errors 10 min) so the panel's refresh rate (as fast as
+  in-process (success 10 min; other errors 10 min) so the panel's refresh rate (as fast as
   5 s) does not translate into upstream requests.
 - Check-in = one `/theos` call, which triggers and locks the daily grant; `refresh_at`
   changes identify a freshly claimed grant.

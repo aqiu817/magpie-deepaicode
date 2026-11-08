@@ -52,10 +52,10 @@ export const RETRY_AFTER_CAP_S = 30;
 /** 非流式 JSON 响应体的读取上限。 */
 export const MAX_JSON_BYTES = 1 << 20;
 
-/** 额度查询缓存：成功结果 5 分钟内直接复用——magpie 面板最短 5 秒一刷，
+/** 额度查询缓存：成功结果 10 分钟内直接复用——magpie 面板最短 5 秒一刷，
  * 额度又是每日发放的数据，没必要跟随面板频率打 /theos（那正是触发上游
  * "签到重启次数超限" 403 的原因）。 */
-export const USAGE_TTL_OK_MS = 300_000;
+export const USAGE_TTL_OK_MS = 600_000;
 /** 其他错误（网络等）10 分钟内不重试。 */
 export const USAGE_TTL_ERR_MS = 600_000;
 /**
