@@ -1,6 +1,6 @@
 {
   "name": "magpie-deepaicode",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "OpenCode provider plugin: DeepAI Code models, direct to the upstream",
   "type": "module",
   "main": "./index.mjs",

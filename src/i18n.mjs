@@ -28,11 +28,13 @@ const MESSAGES = {
     usagePending: "今日额度待发放",
     usageLeftDisplay: "剩 {balance} / {granted} theos",
     usageCredits: "{n} credits",
+    usageCheckinLocked: "今日签到次数已达上游上限，额度窗口明日恢复",
 
     checkinGranted: "今日额度已领取",
     checkinAlready: "今天已经领过",
     checkinPending: "今日额度尚未发放",
     checkinIneligible: "该账号不参与每日额度",
+    checkinLocked: "今日签到次数已达上游上限，明日自动恢复",
 
     browserInstructions: "在浏览器里登录 DeepAI，完成后会自动跳回本机。若页面显示无法访问，把地址栏里的 code 复制进来即可。",
     browserDoneTitle: "登录完成",
@@ -65,11 +67,13 @@ const MESSAGES = {
     usagePending: "Today's grant not issued yet",
     usageLeftDisplay: "{balance} / {granted} theos left",
     usageCredits: "{n} credits",
+    usageCheckinLocked: "Daily check-in limit reached upstream; quota window returns tomorrow",
 
     checkinGranted: "Today's quota claimed",
     checkinAlready: "Already claimed today",
     checkinPending: "Today's grant is not issued yet",
     checkinIneligible: "This account has no daily grant",
+    checkinLocked: "Daily check-in limit reached upstream; resumes tomorrow",
 
     browserInstructions: "Sign in to DeepAI in the browser; you'll be sent back to this machine automatically. If the page can't open, paste the code param from the address bar.",
     browserDoneTitle: "Signed in",

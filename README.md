@@ -53,9 +53,15 @@ Responses endpoint.
 
 ## Quota and check-in
 
-- Quota = `/theos` + `/get_usage_summary` for the signed-in account.
+- Quota = `/theos` + `/get_usage_summary` for the signed-in account. Results are cached
+  in-process (success 60 s; other errors 5 min) so frequent panel refreshes do not
+  translate into upstream requests.
 - Check-in = one `/theos` call, which triggers and locks the daily grant; `refresh_at`
   changes identify a freshly claimed grant.
+- If upstream answers `403 "restarted its check-in too many times today"` (its daily
+  guard against repeated check-in restarts), the plugin stops calling `/theos` for 6 hours
+  and shows a neutral "resumes tomorrow" note instead of an error. Nothing is broken;
+  chatting is unaffected.
 
 The daily free Theos is issued **once per (machine fingerprint, account) per day**, and the
 fingerprint is the real device id (SMBIOS UUID / `MachineGuid` / IOPlatformUUID /

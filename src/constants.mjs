@@ -6,7 +6,7 @@
 import { randomBytes } from "node:crypto";
 
 export const PROVIDER = "deepaicode";
-export const VERSION = "0.2.1";
+export const VERSION = "0.2.2";
 
 /**
  * 插件自己的 UA，所有直连请求显式携带。
@@ -51,6 +51,16 @@ export const CATALOG_TTL_MS = 60_000;
 export const RETRY_AFTER_CAP_S = 30;
 /** 非流式 JSON 响应体的读取上限。 */
 export const MAX_JSON_BYTES = 1 << 20;
+
+/** 额度查询缓存：成功结果 60s 内直接复用（magpie 面板刷新频繁，避免高频打 /theos）。 */
+export const USAGE_TTL_OK_MS = 60_000;
+/** 其他错误（网络/鉴权外）5 分钟内不重试。 */
+export const USAGE_TTL_ERR_MS = 300_000;
+/**
+ * "签到重启次数超限"（403）的锁定时长：上游明确说当天不再发放，
+ * 6 小时内完全不请求 /theos（额度与签到都走这把锁），之后允许重试一次。
+ */
+export const CHECKIN_LOCK_TTL_MS = 6 * 60 * 60 * 1000;
 
 /**
  * 上游模型目录不可用时的兜底快照（2026-11-08 实测，18 个）。

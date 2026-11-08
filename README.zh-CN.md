@@ -48,8 +48,12 @@ deepaicode/gpt-6-astra            # 仅 Responses 通道
 
 ## 额度与签到
 
-- 额度 = 该账号的 `/theos` + `/get_usage_summary`；
-- 签到 = 调一次 `/theos` 触发并锁定当日额度，用 `refresh_at` 变化判断"刚领到"。
+- 额度 = 该账号的 `/theos` + `/get_usage_summary`。结果带进程内缓存（成功 60s、
+  其他错误 5min），面板频繁刷新不会变成对上游的高频请求；
+- 签到 = 调一次 `/theos` 触发并锁定当日额度，用 `refresh_at` 变化判断"刚领到"；
+- 若上游回 `403 "restarted its check-in too many times today"`（它对"当天反复重启
+  签到"的防刷保护），插件 6 小时内不再请求 `/theos`，面板显示中性的"明日恢复"提示
+  而非红色报错。不是故障，聊天不受影响。
 
 每日免费 Theos 按 **(机器指纹, 账号)** 每天发一次。指纹是真实设备标识
 （SMBIOS UUID / `MachineGuid` / IOPlatformUUID / `/etc/machine-id`），哈希方式与桌面端一致。

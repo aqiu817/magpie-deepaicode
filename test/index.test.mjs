@@ -55,6 +55,58 @@ test("chat.headers：只给本供应商加会话粘性", async () => {
   assert.deepEqual(other.headers, {});
 });
 
+test("usage：成功结果进程内缓存，重复调用不打上游", async () => {
+  let calls = 0;
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    calls += 1;
+    if (String(url).endsWith("/theos")) {
+      return new Response(JSON.stringify({ enabled: true, balance: "200.00000", granted: "200.00000" }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ plan: "Free", credits_remaining: 0 }), { status: 200 });
+  };
+  try {
+    const hooks = await DeepAICodePlugin({ magpie: { options: { laneVersion: "4" } } }, {});
+    const getAuth = async () => ({ type: "api", key: "k", accountId: "acc-ok", metadata: { mode: "direct" } });
+    const a = await hooks.auth.usage(getAuth);
+    const b = await hooks.auth.usage(getAuth);
+    assert.equal(calls, 2, "首次 2 个请求（theos + summary），第二次走缓存");
+    assert.equal(a.windows[0].limit, 200);
+    assert.deepEqual(a, b);
+  } finally {
+    globalThis.fetch = real;
+  }
+});
+
+test("usage：403 签到上限 → 中性展示 + 进程内长缓存，不再打上游", async () => {
+  let calls = 0;
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    calls += 1;
+    return new Response(
+      JSON.stringify({ error: { message: "DeepAI Code has restarted its check-in too many times today. Try again tomorrow." } }),
+      { status: 403, headers: { "content-type": "application/json" } },
+    );
+  };
+  try {
+    const hooks = await DeepAICodePlugin({ magpie: { options: { laneVersion: "4" } } }, {});
+    const getAuth = async () => ({ type: "api", key: "k", accountId: "acc-locked", metadata: { mode: "direct" } });
+    const a = await hooks.auth.usage(getAuth);
+    const b = await hooks.auth.usage(getAuth);
+    assert.equal(calls, 2, "锁定后不再重复请求（首次 theos + summary 各一）");
+    assert.equal(a.error, undefined, "不应显示红色报错");
+    assert.match(a.windows[0].display, /明日恢复/);
+    assert.deepEqual(a, b);
+    // checkin 也走同一把锁
+    const c = await hooks.auth.checkin(getAuth);
+    assert.equal(calls, 2, "锁定期间 checkin 不发请求");
+    assert.equal(c.outcome, "ineligible");
+    assert.match(c.message, /明日自动恢复/);
+  } finally {
+    globalThis.fetch = real;
+  }
+});
+
 test("resolveOptions：magpie options 与显式参数合并、类型收敛", () => {
   const opts = resolveOptions(
     { magpie: { options: { laneVersion: " 3 ", baseOrigin: " https://api.deepai.org/ " } } },

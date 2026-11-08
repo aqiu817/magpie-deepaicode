@@ -10,7 +10,14 @@ import {
   fallbackModels,
   modelsFromCatalog,
 } from "./src/catalog.mjs";
-import { DEFAULT_OPTIONS, FALLBACK_SNAPSHOT_DATE, PROVIDER } from "./src/constants.mjs";
+import {
+  CHECKIN_LOCK_TTL_MS,
+  DEFAULT_OPTIONS,
+  FALLBACK_SNAPSHOT_DATE,
+  PROVIDER,
+  USAGE_TTL_ERR_MS,
+  USAGE_TTL_OK_MS,
+} from "./src/constants.mjs";
 import { directBase, getDirectModels, getTheos as getDirectTheos, getUsageSummary, normalizeAllowance, resolveLaneVersion } from "./src/direct.mjs";
 import { createLoader, normalizeIncomingUrl, guardResponse, loaderTargets, sessionAffinityHeaders } from "./src/fetch.mjs";
 import { HttpError } from "./src/http.mjs";
@@ -42,7 +49,7 @@ export const DeepAICodePlugin = async (input = {}, options = {}) => {
   const opts = resolveOptions(input, options);
   const lang = resolveLang(opts);
   const catalogCache = createCatalogCache();
-  const state = { lastRefreshAt: new Map() };
+  const state = { lastRefreshAt: new Map(), usageCache: new Map(), checkinLockUntil: new Map() };
   const fetchImpl = globalThis.fetch;
 
   const log = async (level, message) => {
@@ -92,10 +99,15 @@ export const DeepAICodePlugin = async (input = {}, options = {}) => {
     },
   };
 
-  /** 额度：/theos + /get_usage_summary。 */
+  /** 额度：/theos + /get_usage_summary，带进程内缓存（面板刷新频繁，避免高频打上游）。 */
   async function usage(getAuth) {
     const auth = await getAuth();
     const settings = resolveAccountSettings(auth, opts);
+    const accountId = String(auth?.accountId ?? "").trim() || accountIdFor({ key: settings.key });
+
+    const cached = state.usageCache.get(accountId);
+    if (cached && Date.now() - cached.at < cached.ttl) return cached.value;
+
     try {
       const lane = await resolveLaneVersion(settings.origin, { explicit: settings.laneVersion, fetchImpl });
       const [allowancePayload, summary] = await Promise.all([
@@ -112,24 +124,41 @@ export const DeepAICodePlugin = async (input = {}, options = {}) => {
           fetchImpl,
         }).catch(() => null),
       ]);
-      return buildDirectUsage({
+      const value = buildDirectUsage({
         allowance: normalizeAllowance(allowancePayload),
         summary,
         username: settings.username,
         lang,
       });
+      state.usageCache.set(accountId, { at: Date.now(), ttl: USAGE_TTL_OK_MS, value });
+      return value;
     } catch (err) {
-      return {
-        error: describeError(err, { lang }),
-        windows: [],
-      };
+      // 上游"当日签到重启次数超限"（403）：锁定数小时，期间不再请求，显示中性文案
+      if (err instanceof HttpError && err.status === 403 && /restarted its check-in/i.test(String(err?.message ?? ""))) {
+        state.checkinLockUntil.set(accountId, Date.now() + CHECKIN_LOCK_TTL_MS);
+        const value = {
+          windows: [{ name: t(lang, "usageTodayName"), unit: "theos", aside: false, display: t(lang, "usageCheckinLocked") }],
+        };
+        state.usageCache.set(accountId, { at: Date.now(), ttl: CHECKIN_LOCK_TTL_MS, value });
+        return value;
+      }
+      const value = { error: describeError(err, { lang }), windows: [] };
+      state.usageCache.set(accountId, { at: Date.now(), ttl: USAGE_TTL_ERR_MS, value });
+      return value;
     }
   }
 
-  /** 签到：触发并锁定当日额度。 */
+  /** 签到：触发并锁定当日额度（403 锁定期间直接跳过，不打上游）。 */
   async function checkin(getAuth) {
     const auth = await getAuth();
     const settings = resolveAccountSettings(auth, opts);
+    const accountId = String(auth?.accountId ?? "").trim()
+      || accountIdFor({ key: settings.key });
+
+    if (Date.now() < (state.checkinLockUntil.get(accountId) ?? 0)) {
+      return { outcome: "ineligible", message: t(lang, "checkinLocked") };
+    }
+
     try {
       const lane = await resolveLaneVersion(settings.origin, { explicit: settings.laneVersion, fetchImpl });
       const payload = await getDirectTheos(settings.origin, {
@@ -139,16 +168,21 @@ export const DeepAICodePlugin = async (input = {}, options = {}) => {
         fetchImpl,
       });
       const allowance = normalizeAllowance(payload);
-      const accountId = String(auth?.accountId ?? "").trim()
-        || accountIdFor({ key: settings.key });
       const prev = state.lastRefreshAt.get(accountId) ?? "";
       const out = buildDirectCheckin({ allowance, prevRefreshAt: prev, lang });
       // 只有真正领到才推进基线；granted=0 时保留旧值，让当天稍后的重试能识别“刚领到”
       if (out.outcome !== "failed") {
         state.lastRefreshAt.set(accountId, String(allowance.rawRefreshAt ?? ""));
       }
+      if (out.outcome === "claimed") {
+        state.usageCache.delete(accountId); // 额度刚变化，下一次额度查询重新拉
+      }
       return out;
     } catch (err) {
+      if (err instanceof HttpError && err.status === 403 && /restarted its check-in/i.test(String(err?.message ?? ""))) {
+        state.checkinLockUntil.set(accountId, Date.now() + CHECKIN_LOCK_TTL_MS);
+        return { outcome: "ineligible", message: t(lang, "checkinLocked") };
+      }
       return { outcome: "failed", message: describeError(err, { lang }) };
     }
   }
