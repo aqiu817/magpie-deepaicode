@@ -11,7 +11,7 @@ import { randomBytes } from "node:crypto";
 
 import { DEFAULT_BASE_ORIGIN } from "./constants.mjs";
 import { findDesktopCredentials } from "./credentials.mjs";
-import { getTheos, exchangeCode, normalizeAllowance } from "./direct.mjs";
+import { getTheos, exchangeCode, normalizeAllowance, resolveLaneVersion } from "./direct.mjs";
 import { HttpError } from "./http.mjs";
 import { resolveLang, t } from "./i18n.mjs";
 import { resolveMachineFingerprint } from "./machine.mjs";
@@ -39,10 +39,11 @@ function inputShape(inputs) {
 }
 
 /** 直连模式的验活：/theos。只有鉴权类错误才判登录失败，网络抖动放行。 */
-async function verifyDirectKey(origin, { key, fetchImpl, lang }) {
+async function verifyDirectKey(origin, { key, fetchImpl, lang, laneVersion }) {
   const machineFp = resolveMachineFingerprint();
+  const lane = await resolveLaneVersion(origin, { explicit: laneVersion, fetchImpl });
   try {
-    const payload = await getTheos(origin, { key, machineFp, fetchImpl, timeoutMs: VERIFY_TIMEOUT_MS });
+    const payload = await getTheos(origin, { key, machineFp, laneVersion: lane, fetchImpl, timeoutMs: VERIFY_TIMEOUT_MS });
     return { ok: true, allowance: normalizeAllowance(payload) };
   } catch (err) {
     if (err instanceof HttpError && [401, 403].includes(err.status)) {
@@ -112,6 +113,7 @@ function desktopMethod({ options, lang, fetchImpl }) {
         key: cred.apiKey,
         fetchImpl,
         lang,
+        laneVersion: options.laneVersion,
       });
       if (!verified.ok) return { type: "failed", error: verified.error };
 
@@ -143,6 +145,7 @@ function pasteMethod({ options, lang, fetchImpl }) {
         key,
         fetchImpl,
         lang,
+        laneVersion: options.laneVersion,
       });
       if (!verified.ok) return { type: "failed", error: verified.error };
 

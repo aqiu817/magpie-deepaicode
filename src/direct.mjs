@@ -1,20 +1,27 @@
 // 直连模式：api.deepai.org 的额度与登录换码。
 //
 // 请求头要点（源码级，见 PROTOCOL.md）：
+//   User-Agent                 ← 必须显式带（上游 WAF 拦 "user-agent: node"）
 //   Api-Key                    ← 鉴权走这个头，不是 Authorization
-//   X-DeepAI-Code-Theos        ← 车道版本，默认 "2"，不对会 426
+//   X-DeepAI-Code-Theos        ← 计费车道版本，当前 "4"，不对会 426
+//   X-DeepAI-Code-Instance     ← 每进程随机 32 hex（同桌面端）
 //   X-DeepAI-Code-Machine      ← sha256(小写原始 UUID)，每日免费额度的分配键
 //
 // 额外坑：无效 Key 会 302 到登录页 → 所有请求都要 redirect: "error"。
 
-import { fetchJson } from "./http.mjs";
+import { fetchJson, HttpError } from "./http.mjs";
 import {
   DEFAULT_BASE_ORIGIN,
   DEFAULT_LANE_VERSION,
+  HEADER_INSTANCE,
   HEADER_KEY,
   HEADER_LANE,
   HEADER_MACHINE,
+  INSTANCE_ID,
+  LANE_PROBE_SEQUENCE,
+  USER_AGENT,
 } from "./constants.mjs";
+import { resolveMachineFingerprint } from "./machine.mjs";
 import { parseResetTime, trimSlash } from "./util.mjs";
 
 export function directOrigin(origin) {
@@ -28,11 +35,49 @@ export function directBase(origin) {
 
 /** 上游请求头（不伪造桌面端 UA，也不带 Authorization）。 */
 export function directHeaders({ key = "", machineFp = "", laneVersion = DEFAULT_LANE_VERSION } = {}) {
-  const headers = { Accept: "application/json" };
+  const headers = {
+    Accept: "application/json",
+    "User-Agent": USER_AGENT,
+  };
+  if (INSTANCE_ID) headers[HEADER_INSTANCE] = INSTANCE_ID;
   if (key) headers[HEADER_KEY] = String(key);
   headers[HEADER_LANE] = String(laneVersion || DEFAULT_LANE_VERSION);
   if (machineFp) headers[HEADER_MACHINE] = String(machineFp);
   return headers;
+}
+
+/**
+ * 车道版本解析（laneVersion: "auto" 时探测 /models，免鉴权、无签到副作用）。
+ *
+ * 显式值原样返回、不探测；auto 按 LANE_PROBE_SEQUENCE 依次试，取第一个 200 的值，
+ * 每个 origin 进程内只探测一次（缓存 Promise）。探测失败（网络抖动等）退回默认车道，
+ * 让真正的业务请求再去暴露问题。
+ */
+const laneCache = new Map();
+
+export function resolveLaneVersion(origin, { explicit, fetchImpl } = {}) {
+  const value = String(explicit ?? "auto").trim();
+  if (value && value.toLowerCase() !== "auto") return Promise.resolve(value);
+
+  const key = directOrigin(origin);
+  if (!laneCache.has(key)) {
+    laneCache.set(key, probeLane(key, fetchImpl));
+  }
+  return laneCache.get(key);
+}
+
+async function probeLane(origin, fetchImpl) {
+  const machineFp = resolveMachineFingerprint();
+  for (const lane of LANE_PROBE_SEQUENCE) {
+    try {
+      await getDirectModels(origin, { machineFp, laneVersion: lane, fetchImpl });
+      return lane;
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 426) continue;
+      return DEFAULT_LANE_VERSION;
+    }
+  }
+  return DEFAULT_LANE_VERSION;
 }
 
 /** GET /deepai_code/models（免鉴权；只需要车道头与机器指纹）。 */
@@ -88,7 +133,7 @@ export function normalizeAllowance(payload = {}) {
 export async function exchangeCode(
   origin,
   code,
-  { fetchImpl = globalThis.fetch, timeoutMs = 20_000 } = {},
+  { fetchImpl = globalThis.fetch, timeoutMs = 45_000 } = {},
 ) {
   const value = String(code ?? "").trim();
   if (!value) throw new Error("empty-code");

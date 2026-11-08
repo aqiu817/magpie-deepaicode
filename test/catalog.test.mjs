@@ -106,11 +106,11 @@ test("modelsFromCatalog：键为 id，并展开基础模型", () => {
   assert.equal(out["glm-5.3-flash"].name, "GLM 5.3 Flash");
 });
 
-test("兜底快照：14 个、8 免费、不含别名", () => {
+test("兜底快照：18 个、9 免费、不含别名", () => {
   const list = fallbackModels({});
   assert.equal(Object.keys(list).length, FALLBACK_MODELS.length);
-  assert.equal(FALLBACK_MODELS.length, 14);
-  assert.equal(FALLBACK_MODELS.filter((m) => m.theosPerRequest === "0").length, 8);
+  assert.equal(FALLBACK_MODELS.length, 18);
+  assert.equal(FALLBACK_MODELS.filter((m) => m.theosPerRequest === "0").length, 9);
   assert.equal(list["gpt-6-astra"].provider.npm, "@ai-sdk/openai");
 });
 

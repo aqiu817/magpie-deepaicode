@@ -3,7 +3,7 @@
 本文件记录插件实现所依赖的**上游契约**，以及每条结论的证据等级。
 它替代"每次改动都去翻反编译源码"：实现有疑问时先看这里。
 
-- 快照日期：**2026-11-06**（模型目录同日期）
+- 快照日期：**2026-11-06**（模型目录 2026-11-08 更新）；**2026-11-08**：适配上游车道协议变更（lane 4 / UA / Instance / 请求体校验，见 §1.2/§1.3）
 - 参考实现：[DeepAICode2API](https://github.com/2951461586/DeepAICode2API)（MIT）——上游协议的逆向结论最初来自它的 `internal/deepai/*`、`docs/recon.md`
 - 插件规范：[magpie 插件开发指南](https://usemagpie.ai/docs/zh/plugins)
 
@@ -42,10 +42,18 @@
 
 | 头 | 值 | 作用 |
 |---|---|---|
+| `User-Agent` | `magpie-deepaicode/<version>`（**必须显式**） | 2026-11-07 起上游 WAF 对 `user-agent: node`（Node 宿主 undici fetch 默认值）在 /chat/completions 上 400；curl / Bun / Electron 自带 UA 不受影响，显式 UA 对所有宿主无害 |
 | `Api-Key` | 账号 Key（UUID 形态 `8-4-4-4-12`） | **鉴权走这个头，不是 `Authorization`** |
-| `X-DeepAI-Code-Theos` | `2` | 计费车道版本；不对会 `426` |
+| `X-DeepAI-Code-Theos` | `4`（插件默认 `"auto"` 自动探测） | 计费车道版本。白名单实测（2026-11-08）：`2`/`4` → 200，`5` → 426；错值 426。`/models` 免鉴权即可探测，插件按 `["4","5","6","8","12","3","2"]` 顺序取第一个受理值并进程内缓存 |
+| `X-DeepAI-Code-Instance` | 每进程随机 32 hex（同桌面端 `DEEPAI_LANE_HEADERS` 生成方式） | 客户端实例标识；桌面端对齐项 |
 | `X-DeepAI-Code-Machine` | `sha256(小写原始 UUID)` 十六进制 | 每日免费额度的分配键 |
 | `X-Session-Affinity` | 任意会话 id | 会话粘性（body 的 `prompt_cache_key` 同效） |
+
+**请求体形状（2026-11-07 起校验）**：chat/completions 的 `messages` 首条必须是
+`system`/`developer`，`/responses` 必须带非空 `instructions`；缺失时上游回
+`400 "This request is not one DeepAI Code sends."`（内容不检查）。插件在缺失时自动
+补一条最简 `system` / `instructions`，不改已有内容。经桌面端本地中继回放验证与 UA
+过滤相互独立（[#3](https://github.com/aqiu817/magpie-deepaicode/pull/3) 的证据）。
 
 **机器指纹的策略（0.2.0）**：指纹取真实设备标识——Windows 为
 SMBIOS `Win32_ComputerSystemProduct.UUID`（回落 `MachineGuid`）、macOS 为
@@ -60,8 +68,10 @@ SMBIOS `Win32_ComputerSystemProduct.UUID`（回落 `MachineGuid`）、macOS 为
 | `409` | `{"error":{"code":"session_busy"}}` + `Retry-After` | 容量拒绝 | **转 429**（`Retry-After` 夹到 30s），交给 magpie 换号 |
 | `401` | — | 鉴权失败 | 原样 401（magpie 标记账号） |
 | `403` + `email_unverified` | — | 邮箱未验证 | 原样 403 + `X-Magpie-Sign-In: expired` |
-| `426` + `lane_version_unsupported` | — | 车道/指纹问题 | 原样 426，不标记账号 |
-| `400/404/422` | — | 请求本身的问题 | 原样透出 |
+| `426` + `lane_version_unsupported` | — | 车道/指纹问题（车道值不在白名单，或 /models 缺机器指纹头） | 原样 426，不标记账号；`laneVersion: "auto"` 会自动跟进新车道 |
+| `400` + `This request is not one DeepAI Code sends.` | — | 客户端形状校验：UA 为 `node`（WAF），或请求体缺 system/instructions | 0.2.1：显式 UA + 自动补最简 system/instructions |
+| `403` + `restarted its check-in too many times today` | — | 当日 `/theos` 签到状态机重启次数超限（换指纹、反复登录、频繁轮询） | 次日重置自动恢复；聊天不受影响 |
+| `400`（其它 body）/`404`/`422` | — | 请求本身的问题 | 原样透出 |
 | `302` | 登录页 | 无效 Key | **不跟随**（`redirect: "error"`）→ 转 401 |
 | `5xx` / 网络错误 | — | 抖动 | 原样 / 抛错，交给 magpie |
 
@@ -88,9 +98,9 @@ secrets : <base>/userdata/secrets → <base>/secrets → <base>/dev/secrets
 | 新账号首次 | 常见 `granted=0`，几分钟后才 200 | 源码级 |
 | 单请求成本 | 约 `1.8e-6`，小额调用看不出余额下降 | 源码级 |
 
-### 1.6 模型目录快照（2026-11-06 实测）
+### 1.6 模型目录快照（2026-11-08 实测）
 
-`GET /deepai_code/models` **免鉴权**，实测 HTTP 200，14 个模型，默认 `glm-5.3-flash`。
+`GET /deepai_code/models` **免鉴权**（需车道头 + 机器指纹头），实测 HTTP 200，18 个模型，默认 `glm-5.3-flash`。
 字段：`{id, name, reasoning, input[], contextWindow, maxTokens, premier, theosPerRequest, api?}`。
 
 | id | 名称 | API | 免费 | 上下文 | 输入 | Theos/请求 |
@@ -102,11 +112,15 @@ secrets : <base>/userdata/secrets → <base>/secrets → <base>/dev/secrets
 | `gpt-6-luna` | GPT-6 Luna | chat | ✅ | 1,048,576 | text,image | 0 |
 | `mimo-2.6-pro` | MiMo 2.6 Pro | chat | ✅ | 1,048,576 | text,image | 0 |
 | `crouton-alpha` | Crouton Alpha | chat | ✅ | 1,048,576 | text,image | 0 |
+| `glyph-cluster` | Glyph Cluster | chat | ✅ | 256,000 | text | 0 |
 | `deepai-cyber` | DeepAI Cyber | chat | ✅ | 65,536 | text | 0 |
 | `gpt-6.1-sol` | GPT-6.1 Sol | chat | ❌ | 1,048,576 | text,image | 10 |
+| `gemini-4-argon` | Gemini 4 Argon | chat | ❌ | 1,048,576 | text,image | 10 |
 | `glm-5.3` | GLM 5.3 | chat | ❌ | 1,048,576 | text | 3 |
 | `kimi-k3` | Kimi K3 | chat | ❌ | 1,048,576 | text,image | 3 |
+| `muse-spark-1.3` | Muse Spark 1.3 | chat | ❌ | 1,048,576 | text,image | 6 |
 | `claude-opus-5-5` | Claude Opus 5.5 | chat | ❌ | 1,000,000 | text,image | 15 |
+| `muse-wonder` | Muse Wonder | chat | ❌ | 1,048,576 | text,image | 15 |
 | `claude-fable-5-1` | Claude Fable 5.1 | chat | ❌ | 1,000,000 | text,image | 25 |
 | `gpt-6-astra` | GPT-6 Astra | **openai-responses** | ❌ | 1,048,576 | text,image | 50 |
 
@@ -117,6 +131,8 @@ secrets : <base>/userdata/secrets → <base>/secrets → <base>/dev/secrets
 3. SSE 同一事件可能有多行 `data:`，按规范用 `\n` 拼接后再解析。
 4. 无效 Key 会 302 跳登录页——所有请求必须禁止跟随重定向。
 5. `prompt_cache_key`（body）与 `X-Session-Affinity`（头）都影响上游调度。
+6. 上游对 `/models` 的车道值做白名单校验（`2`/`4` → 200，`5` → 426），且免鉴权、无签到副作用——插件默认 `laneVersion: "auto"` 利用这一点自动跟进未来升车道，无需发版。
+7. 2026-11-07 的"lane 2 全线 426"观察是 `user-agent: node` 污染下的测量假象（[#5](https://github.com/aqiu817/magpie-deepaicode/pull/5) 定位）；排查这类协议问题时先固定 UA 再下结论。
 
 ---
 
@@ -149,6 +165,7 @@ magpie 的 `auth.usage` 约定：
 | 6 | **magpie 是否展示 `reasoning`** | ✅ 实测 | 2026-11-06 晚真实 Agent 会话（`deepseek-v4.1-flash`）：「思考 · 持续 4 秒」块正常渲染 → magpie 原生展示上游 `reasoning`；SSE 行级补写**不需要启用** |
 | 7 | 浏览器登录 `desktop_auth` 的 `state`/`port` 规则 | ❓ 未验证 | 未做浏览器实登；`localhost` 回调与 code 降级已由单测覆盖 |
 | 8 | 插件 fetch 的 URL 形状 | ✅ 实测 | magpie 拼成 `{baseURL}/chat/completions` 或 `{baseURL}/responses`；插件的路径重建与之兼容（重复 `/deepai_code` 也能纠正） |
+| 9 | **2026-11-08 车道协议适配** | ✅ 实测 | lane 4 + Instance + system 整形 + 显式 UA → chat 200（真实账号单发验证）；models 200（18 模型，lane 2/4 均 200、5 → 426）；致谢 [#3](https://github.com/aqiu817/magpie-deepaicode/pull/3) 与 [#5](https://github.com/aqiu817/magpie-deepaicode/pull/5) 的甄别工作 |
 
 ## 4. 真机实测记录（2026-11-06）
 

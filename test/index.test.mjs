@@ -40,7 +40,7 @@ test("config 钩子：不覆盖已有供应商，且默认模型齐全", async (
   assert.equal(fresh.provider.deepaicode.npm, "@ai-sdk/openai-compatible");
   assert.equal(fresh.provider.deepaicode.api, "https://api.deepai.org/deepai_code");
   assert.equal(fresh.provider.deepaicode.models["glm-5.3-flash"].provider, undefined);
-  assert.equal(Object.keys(fresh.provider.deepaicode.models).length, 14);
+  assert.equal(Object.keys(fresh.provider.deepaicode.models).length, 18);
   assert.equal(fresh.provider.deepaicode.models["gpt-6-astra"].provider.npm, "@ai-sdk/openai");
 });
 
@@ -65,6 +65,6 @@ test("resolveOptions：magpie options 与显式参数合并、类型收敛", () 
   assert.equal(opts.lang, "en");
   const defaults = resolveOptions({}, {});
   assert.equal(defaults.baseOrigin, "https://api.deepai.org");
-  assert.equal(defaults.laneVersion, "2");
+  assert.equal(defaults.laneVersion, "auto");
   assert.equal(defaults.debug, false);
 });

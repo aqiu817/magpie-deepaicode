@@ -1,6 +1,6 @@
 // 账号设置解析：一个 magpie 账号 → 用哪个地址、哪份凭据（直连上游）。
 
-import { DEFAULT_BASE_ORIGIN, DEFAULT_LANE_VERSION } from "./constants.mjs";
+import { DEFAULT_BASE_ORIGIN } from "./constants.mjs";
 import { resolveMachineFingerprint, sha256Hex } from "./machine.mjs";
 import { trimSlash } from "./util.mjs";
 
@@ -14,8 +14,7 @@ export function resolveAccountSettings(auth, options = {}) {
 
   const origin = trimSlash(options.baseOrigin || DEFAULT_BASE_ORIGIN);
   const key = String(auth?.key ?? "").trim();
-  const laneVersion = String(metadata.laneVersion ?? options.laneVersion ?? DEFAULT_LANE_VERSION).trim()
-    || DEFAULT_LANE_VERSION;
+  const laneVersion = String(metadata.laneVersion ?? options.laneVersion ?? "auto").trim() || "auto";
   const machineFp = resolveMachineFingerprint();
   const username = String(metadata.username ?? "").trim();
 

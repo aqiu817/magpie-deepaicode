@@ -8,7 +8,9 @@ import {
   getDirectModels,
   getTheos,
   normalizeAllowance,
+  resolveLaneVersion,
 } from "../src/direct.mjs";
+import { DEFAULT_LANE_VERSION, VERSION } from "../src/constants.mjs";
 import { buildDirectCheckin, buildDirectUsage } from "../src/usage.mjs";
 
 function jsonResponse(body, status = 200, headers = {}) {
@@ -18,13 +20,62 @@ function jsonResponse(body, status = 200, headers = {}) {
   });
 }
 
-test("directBase / directHeaders：Api-Key 而不是 Authorization", () => {
+test("directBase / directHeaders：显式 UA、Api-Key 而不是 Authorization", () => {
   assert.equal(directBase("https://api.deepai.org/"), "https://api.deepai.org/deepai_code");
-  const headers = directHeaders({ key: "k", machineFp: "fp", laneVersion: "2" });
+  const headers = directHeaders({ key: "k", machineFp: "fp", laneVersion: "4" });
+  assert.equal(headers["User-Agent"], `magpie-deepaicode/${VERSION}`);
   assert.equal(headers["Api-Key"], "k");
-  assert.equal(headers["X-DeepAI-Code-Theos"], "2");
+  assert.equal(headers["X-DeepAI-Code-Theos"], "4");
+  assert.match(headers["X-DeepAI-Code-Instance"], /^[0-9a-f]{32}$/);
   assert.equal(headers["X-DeepAI-Code-Machine"], "fp");
   assert.equal(headers.Authorization, undefined);
+  // 同一进程内实例 id 稳定
+  assert.equal(directHeaders({})["X-DeepAI-Code-Instance"], headers["X-DeepAI-Code-Instance"]);
+});
+
+test("resolveLaneVersion：显式值直接返回、不探测", async () => {
+  let called = 0;
+  const lane = await resolveLaneVersion("https://lane-explicit.test", {
+    explicit: "4",
+    fetchImpl: async () => {
+      called += 1;
+      return new Response("{}", { status: 200 });
+    },
+  });
+  assert.equal(lane, "4");
+  assert.equal(called, 0);
+});
+
+test("resolveLaneVersion：auto 按序列探测并缓存（同 origin 只探一次）", async () => {
+  const seen = [];
+  const fetchImpl = async (url, init) => {
+    seen.push(init.headers["X-DeepAI-Code-Theos"]);
+    // lane 4 拒绝、lane 5 受理 —— 模拟上游升级
+    if (init.headers["X-DeepAI-Code-Theos"] === "5") {
+      return new Response(JSON.stringify({ models: [] }), { status: 200 });
+    }
+    return new Response('{"error":{"code":"lane_version_unsupported"}}', { status: 426 });
+  };
+  const origin = "https://lane-auto.test";
+  assert.equal(await resolveLaneVersion(origin, { fetchImpl }), "5");
+  assert.equal(await resolveLaneVersion(origin, { fetchImpl }), "5", "第二次应命中缓存");
+  assert.deepEqual(seen, ["4", "5"]);
+});
+
+test("resolveLaneVersion：探测网络错误时退回默认车道", async () => {
+  const lane = await resolveLaneVersion("https://lane-error.test", {
+    fetchImpl: async () => {
+      throw new Error("network down");
+    },
+  });
+  assert.equal(lane, DEFAULT_LANE_VERSION);
+});
+
+test("resolveLaneVersion：序列耗尽仍 426 时退回默认车道", async () => {
+  const lane = await resolveLaneVersion("https://lane-all426.test", {
+    fetchImpl: async () => new Response('{"error":{"code":"lane_version_unsupported"}}', { status: 426 }),
+  });
+  assert.equal(lane, DEFAULT_LANE_VERSION);
 });
 
 test("getDirectModels：免鉴权，只带车道与机器指纹", async () => {

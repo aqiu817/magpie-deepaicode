@@ -1,19 +1,22 @@
 // 推理请求链路：loader 的 fetch。
 //
 // magpie 的网关已经把任意 Agent 协议转成了 Chat Completions / Responses，
-// 并决定基地址（loader.baseURL）。插件要做的只有四件事：
-//   1. 注入上游要求的头（Api-Key / Theos 车道 / 机器指纹）；
+// 并决定基地址（loader.baseURL）。插件要做的只有五件事：
+//   1. 注入上游要求的头（UA / Api-Key / Theos 车道 / 实例 id / 机器指纹）；
 //   2. 把路径归一到目标端点（不依赖 magpie 拼接行为的“保险丝”）；
-//   3. 错误语义映射（409 → 429、403 email_unverified → 标记登录失效、302 → 401）；
-//   4. 原样流式透传（不缓冲，不改内容）。
+//   3. 整形请求体（上游校验“请求必须像桌面端发出的”，缺 system/instructions 时补最简值）；
+//   4. 错误语义映射（409 → 429、403 email_unverified → 标记登录失效、302 → 401）；
+//   5. 原样流式透传（不缓冲，不改内容）。
 
 import {
   DEFAULT_LANE_VERSION,
   HEADER_AFFINITY,
+  HEADER_LANE,
   HEADER_MACHINE,
   RETRY_AFTER_CAP_S,
+  SHAPE_SYSTEM_MESSAGE,
 } from "./constants.mjs";
-import { directBase, directHeaders } from "./direct.mjs";
+import { directBase, directHeaders, resolveLaneVersion } from "./direct.mjs";
 import { t, resolveLang } from "./i18n.mjs";
 import { resolveAccountSettings } from "./modes.mjs";
 
@@ -55,8 +58,43 @@ export function modeHeaders(settings) {
   return directHeaders({
     key: settings.key,
     machineFp: settings.machineFp,
-    laneVersion: settings.laneVersion || DEFAULT_LANE_VERSION,
+    laneVersion: settings.laneVersion === "auto" ? DEFAULT_LANE_VERSION : settings.laneVersion,
   });
+}
+
+/**
+ * 上游 2026-11-07 起校验“请求必须是 DeepAI Code 发出的样子”：
+ * chat/completions 的 messages 首条必须是 system（或 developer），
+ * responses 必须带非空 instructions；缺失时上游回
+ * 400 "This request is not one DeepAI Code sends."。
+ * 只在缺的时候补一条最简 system / instructions，不改已有内容。
+ * 返回重写后的 JSON 字符串；没动返回 null。
+ */
+export function shapeRequestBody(target, body) {
+  if (typeof body !== "string" || body.length === 0) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+
+  let changed = false;
+  if (target.endsWith(CHAT_SUFFIX) && Array.isArray(parsed.messages) && parsed.messages.length > 0) {
+    const first = parsed.messages[0];
+    const role = first && typeof first === "object" ? String(first.role ?? "") : "";
+    if (role !== "system" && role !== "developer") {
+      parsed.messages = [{ role: "system", content: SHAPE_SYSTEM_MESSAGE }, ...parsed.messages];
+      changed = true;
+    }
+  } else if (target.endsWith(RESPONSES_SUFFIX)) {
+    if (typeof parsed.instructions !== "string" || parsed.instructions.trim() === "") {
+      parsed.instructions = SHAPE_SYSTEM_MESSAGE;
+      changed = true;
+    }
+  }
+  return changed ? JSON.stringify(parsed) : null;
 }
 
 function clampRetryAfter(headers) {
@@ -117,6 +155,8 @@ export function createLoader(auth, options = {}, { fetchImpl = globalThis.fetch 
   const targets = loaderTargets(settings);
   const headers = modeHeaders(settings);
   const lang = resolveLang(options);
+  // laneVersion: "auto" 时这里会发起探测（每 origin 进程内一次）；显式值直接兑现
+  const laneP = resolveLaneVersion(settings.origin, { explicit: settings.laneVersion, fetchImpl });
 
   const loader = {
     baseURL: targets.baseURL,
@@ -126,17 +166,23 @@ export function createLoader(auth, options = {}, { fetchImpl = globalThis.fetch 
       // URL 一律从配置的基地址重建：magpie 传进来的主机/路径只用来判断
       // 是 chat 还是 responses，凭据永远不会被发往别的主机。
       const target = normalizeIncomingUrl(input, settings);
+      const lane = await laneP;
 
       const merged = new Headers(init?.headers ?? {});
       for (const [key, value] of Object.entries(headers)) merged.set(key, value);
+      merged.set(HEADER_LANE, lane);
       if (settings.machineFp) {
         merged.set(HEADER_MACHINE, settings.machineFp);
       }
 
+      // 上游校验请求形状：缺 system / instructions 时补最简值
+      const shaped = shapeRequestBody(target, init?.body);
+      const outgoing = shaped === null ? init : { ...init, body: shaped };
+
       let res;
       try {
         res = await fetchImpl(target, {
-          ...init,
+          ...outgoing,
           headers: merged,
           redirect: "error", // 无效 Key 会 302 到登录页：绝不跟随
         });

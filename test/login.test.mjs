@@ -40,7 +40,7 @@ test("桌面端登录：读文件 + /theos 验活", async () => {
       if (url.endsWith("/theos")) return json({ enabled: true, balance: "200.00000", granted: "200.00000" });
       throw new Error(`unexpected ${url}`);
     };
-    const methods = createMethods({ options: { lang: "zh" }, deps: { fetchImpl } });
+    const methods = createMethods({ options: { lang: "zh", laneVersion: "4" }, deps: { fetchImpl } });
     const out = await methods[1].authorize({ dir: "", key: "", keyInputs: "" });
     assert.equal(out.type, "success");
     assert.equal(out.key, KEY);
@@ -71,7 +71,7 @@ test("粘贴登录：缺 Key 失败；有 Key 成功", async () => {
     if (url.endsWith("/theos")) return json({ enabled: true, balance: "200", granted: "200" });
     throw new Error(`unexpected ${url}`);
   };
-  const methods = createMethods({ options: { lang: "zh" }, deps: { fetchImpl } });
+  const methods = createMethods({ options: { lang: "zh", laneVersion: "4" }, deps: { fetchImpl } });
 
   const missing = await methods[2].authorize({});
   assert.equal(missing.type, "failed");
@@ -93,7 +93,7 @@ test("debug 日志只记字段名，绝不记录 Key 值", async () => {
       throw new Error(`unexpected ${url}`);
     };
     const methods = createMethods({
-      options: { lang: "zh", debug: true },
+      options: { lang: "zh", debug: true, laneVersion: "4" },
       deps: { fetchImpl },
     });
     await methods[2].authorize({ key: KEY, username: "ada" });

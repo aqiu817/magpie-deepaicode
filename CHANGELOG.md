@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.2.1 — 2026-11-08
+
+上游于 2026-11-07 起对请求做“客户端形状”校验，旧版插件全线 426/400（issue #1/#2）。
+本版按两次外部甄别（[#3](https://github.com/aqiu817/magpie-deepaicode/pull/3) mun0602、
+[#5](https://github.com/aqiu817/magpie-deepaicode/pull/5) Kling0012，感谢！）合并修复，
+并经本机甄别实验定案（2026-11-08 实测）：
+
+- **显式 `User-Agent: magpie-deepaicode/<version>`**（所有直连请求）：Node 宿主的
+  undici fetch 默认发 `user-agent: node`，上游 WAF 对 /chat/completions 直接
+  `400 "This request is not one DeepAI Code sends."`；Bun 宿主 / curl 不受影响，
+  显式 UA 对两者都无害。
+- **车道默认改为 `laneVersion: "auto"`**：`/models` 免鉴权且对车道值做白名单校验
+  （实测 `2`/`4` → 200，`5` → 426），插件按 `["4","5","6","8","12","3","2"]` 顺序
+  探测取第一个受理值并进程内缓存——上游再升车道时自动跟进，无需发版。
+  显式值（如 `"4"`）原样生效、不探测。默认值即上游当前要求的 **lane 4**。
+- **`X-DeepAI-Code-Instance`**：每进程随机 32 hex（同桌面端），所有直连请求携带。
+- **请求体整形**：chat/completions 的 `messages` 首条必须是 `system`/`developer`、
+  `/responses` 必须带非空 `instructions`，缺失时插件自动补一条最简
+  `"You are a coding agent."`，不改已有内容。
+- 换码（`/desktop_auth/exchange/`）超时 20s → 45s（弱网/代理链路下上游偶尔超过 20s）。
+- 兜底模型快照 14 → **18**（新增 `glyph-cluster`、`gemini-4-argon`、`muse-spark-1.3`、
+  `muse-wonder`；`claude-opus-5-5`/`claude-fable-5-1`/`gpt-6-astra` 的 maxTokens
+  调整为 64000/64000/128000），快照日期 2026-11-08。
+- 测试 54 → 61（UA/实例头、车道探测缓存与退回、请求体整形分支）。
+
+升级提示：直接更新插件即可，无需改任何选项；已登录账号保持登录状态。
+
 ## 0.2.0 — 2026-11-07
 
 按 magpie 社区收录要求（PR #805 审查意见）做出的重要变更：

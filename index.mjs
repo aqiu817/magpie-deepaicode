@@ -11,7 +11,7 @@ import {
   modelsFromCatalog,
 } from "./src/catalog.mjs";
 import { DEFAULT_OPTIONS, FALLBACK_SNAPSHOT_DATE, PROVIDER } from "./src/constants.mjs";
-import { directBase, getDirectModels, getTheos as getDirectTheos, getUsageSummary, normalizeAllowance } from "./src/direct.mjs";
+import { directBase, getDirectModels, getTheos as getDirectTheos, getUsageSummary, normalizeAllowance, resolveLaneVersion } from "./src/direct.mjs";
 import { createLoader, normalizeIncomingUrl, guardResponse, loaderTargets, sessionAffinityHeaders } from "./src/fetch.mjs";
 import { HttpError } from "./src/http.mjs";
 import { ICON_DATA_URI } from "./src/icon.mjs";
@@ -57,9 +57,10 @@ export const DeepAICodePlugin = async (input = {}, options = {}) => {
   /** 拉目录：上游 /deepai_code/models。 */
   async function loadCatalog(settings) {
     return catalogCache.get(settings.origin, async () => {
+      const lane = await resolveLaneVersion(settings.origin, { explicit: settings.laneVersion, fetchImpl });
       const payload = await getDirectModels(settings.origin, {
         machineFp: settings.machineFp,
-        laneVersion: settings.laneVersion,
+        laneVersion: lane,
         fetchImpl,
       });
       const list = catalogFromDirect(payload);
@@ -96,17 +97,18 @@ export const DeepAICodePlugin = async (input = {}, options = {}) => {
     const auth = await getAuth();
     const settings = resolveAccountSettings(auth, opts);
     try {
+      const lane = await resolveLaneVersion(settings.origin, { explicit: settings.laneVersion, fetchImpl });
       const [allowancePayload, summary] = await Promise.all([
         getDirectTheos(settings.origin, {
           key: settings.key,
           machineFp: settings.machineFp,
-          laneVersion: settings.laneVersion,
+          laneVersion: lane,
           fetchImpl,
         }),
         getUsageSummary(settings.origin, {
           key: settings.key,
           machineFp: settings.machineFp,
-          laneVersion: settings.laneVersion,
+          laneVersion: lane,
           fetchImpl,
         }).catch(() => null),
       ]);
@@ -129,10 +131,11 @@ export const DeepAICodePlugin = async (input = {}, options = {}) => {
     const auth = await getAuth();
     const settings = resolveAccountSettings(auth, opts);
     try {
+      const lane = await resolveLaneVersion(settings.origin, { explicit: settings.laneVersion, fetchImpl });
       const payload = await getDirectTheos(settings.origin, {
         key: settings.key,
         machineFp: settings.machineFp,
-        laneVersion: settings.laneVersion,
+        laneVersion: lane,
         fetchImpl,
       });
       const allowance = normalizeAllowance(payload);
@@ -186,6 +189,7 @@ export const _internal = {
   loaderTargets,
   resolveAccountSettings,
   accountIdFor,
+  resolveLaneVersion,
   buildDirectUsage,
   buildDirectCheckin,
   catalogFromDirect,
