@@ -6,7 +6,7 @@
 import { randomBytes } from "node:crypto";
 
 export const PROVIDER = "deepaicode";
-export const VERSION = "0.2.2";
+export const VERSION = "0.2.3";
 
 /**
  * 插件自己的 UA，所有直连请求显式携带。
