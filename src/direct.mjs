@@ -47,30 +47,33 @@ export function directHeaders({ key = "", machineFp = "", laneVersion = DEFAULT_
 }
 
 /**
- * 车道版本解析（laneVersion: "auto" 时探测 /models，免鉴权、无签到副作用）。
+ * 车道版本解析（laneVersion: "auto" 时探测 /models，无签到副作用）。
  *
  * 显式值原样返回、不探测；auto 按 LANE_PROBE_SEQUENCE 依次试，取第一个 200 的值，
  * 每个 origin 进程内只探测一次（缓存 Promise）。探测失败（网络抖动等）退回默认车道，
  * 让真正的业务请求再去暴露问题。
+ *
+ * /models 自 2026-11-14 起也要求 Api-Key（无 key 直接 401），所以探测同样带上 key；
+ * 401 不是车道信号，遇到即退回默认车道，让业务请求暴露真正的鉴权问题。
  */
 const laneCache = new Map();
 
-export function resolveLaneVersion(origin, { explicit, fetchImpl } = {}) {
+export function resolveLaneVersion(origin, { explicit, fetchImpl, key = "" } = {}) {
   const value = String(explicit ?? "auto").trim();
   if (value && value.toLowerCase() !== "auto") return Promise.resolve(value);
 
-  const key = directOrigin(origin);
-  if (!laneCache.has(key)) {
-    laneCache.set(key, probeLane(key, fetchImpl));
+  const originKey = directOrigin(origin);
+  if (!laneCache.has(originKey)) {
+    laneCache.set(originKey, probeLane(originKey, { fetchImpl, key }));
   }
-  return laneCache.get(key);
+  return laneCache.get(originKey);
 }
 
-async function probeLane(origin, fetchImpl) {
+async function probeLane(origin, { fetchImpl, key = "" } = {}) {
   const machineFp = resolveMachineFingerprint();
   for (const lane of LANE_PROBE_SEQUENCE) {
     try {
-      await getDirectModels(origin, { machineFp, laneVersion: lane, fetchImpl });
+      await getDirectModels(origin, { key, machineFp, laneVersion: lane, fetchImpl });
       return lane;
     } catch (err) {
       if (err instanceof HttpError && err.status === 426) continue;
@@ -80,14 +83,14 @@ async function probeLane(origin, fetchImpl) {
   return DEFAULT_LANE_VERSION;
 }
 
-/** GET /deepai_code/models（免鉴权；只需要车道头与机器指纹）。 */
+/** GET /deepai_code/models。2026-11-14 起需要 Api-Key（无 key 直接 401）；车道头与机器指纹照旧。 */
 export async function getDirectModels(
   origin,
-  { machineFp = "", laneVersion = DEFAULT_LANE_VERSION, fetchImpl = globalThis.fetch, timeoutMs = 20_000 } = {},
+  { key = "", machineFp = "", laneVersion = DEFAULT_LANE_VERSION, fetchImpl = globalThis.fetch, timeoutMs = 20_000 } = {},
 ) {
   return fetchJson(`${directBase(origin)}/models`, {
     fetchImpl,
-    headers: directHeaders({ machineFp, laneVersion }),
+    headers: directHeaders({ key, machineFp, laneVersion }),
     timeoutMs,
   });
 }

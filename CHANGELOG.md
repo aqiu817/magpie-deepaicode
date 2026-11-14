@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.4 — 2026-11-14
+
+上游把 `/deepai_code/models` 从免鉴权改成了**要求 `Api-Key`**（无 key 直接 401）。
+旧版插件拉目录不带 key → 401 → 被当作"登录失效"，magpie 把正常账号标记成已退出。
+本版把 key 贯穿进所有目录相关请求：
+
+- **拉目录带 key**：`provider.models` → `getDirectModels` 现在携带 `Api-Key`。
+- **车道自动探测带 key**：`laneVersion: "auto"` 的 `/models` 探测同样带 key
+  （401 不是车道信号，遇到即退回默认车道，由业务请求暴露真正的鉴权问题）。
+  额度、签到、loader、登录验活里的探测调用点同步更新。
+- 探针脚本 `scripts/probe.mjs` 的 models 步骤也带上 key。
+- 401 → `signIn: "expired"` 的语义保持不变：现在只在 key 真的失效时触发。
+- 测试更新：models 请求断言携带 Api-Key、车道探测断言 key 透传（63 全绿）。
+
 ## 0.2.3 — 2026-11-08
 
 - 额度查询缓存时长上调：成功与错误均 **10 分钟**（0.2.2 为 60s/5min——magpie 面板

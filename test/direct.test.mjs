@@ -46,10 +46,10 @@ test("resolveLaneVersion：显式值直接返回、不探测", async () => {
   assert.equal(called, 0);
 });
 
-test("resolveLaneVersion：auto 按序列探测并缓存（同 origin 只探一次）", async () => {
+test("resolveLaneVersion：auto 按序列探测并缓存（同 origin 只探一次），探测带上 key", async () => {
   const seen = [];
   const fetchImpl = async (url, init) => {
-    seen.push(init.headers["X-DeepAI-Code-Theos"]);
+    seen.push([init.headers["X-DeepAI-Code-Theos"], init.headers["Api-Key"]]);
     // lane 4 拒绝、lane 5 受理 —— 模拟上游升级
     if (init.headers["X-DeepAI-Code-Theos"] === "5") {
       return new Response(JSON.stringify({ models: [] }), { status: 200 });
@@ -57,9 +57,9 @@ test("resolveLaneVersion：auto 按序列探测并缓存（同 origin 只探一�
     return new Response('{"error":{"code":"lane_version_unsupported"}}', { status: 426 });
   };
   const origin = "https://lane-auto.test";
-  assert.equal(await resolveLaneVersion(origin, { fetchImpl }), "5");
-  assert.equal(await resolveLaneVersion(origin, { fetchImpl }), "5", "第二次应命中缓存");
-  assert.deepEqual(seen, ["4", "5"]);
+  assert.equal(await resolveLaneVersion(origin, { fetchImpl, key: "probe-key" }), "5");
+  assert.equal(await resolveLaneVersion(origin, { fetchImpl, key: "probe-key" }), "5", "第二次应命中缓存");
+  assert.deepEqual(seen, [["4", "probe-key"], ["5", "probe-key"]]);
 });
 
 test("resolveLaneVersion：探测网络错误时退回默认车道", async () => {
@@ -78,9 +78,10 @@ test("resolveLaneVersion：序列耗尽仍 426 时退回默认车道", async () 
   assert.equal(lane, DEFAULT_LANE_VERSION);
 });
 
-test("getDirectModels：免鉴权，只带车道与机器指纹", async () => {
+test("getDirectModels：2026-11-14 起上游要求鉴权——带 key 时携带 Api-Key，不传则不带", async () => {
   let captured = null;
   await getDirectModels("https://api.deepai.org", {
+    key: "model-key",
     machineFp: "fp",
     fetchImpl: async (url, init) => {
       captured = { url, headers: init.headers };
@@ -88,8 +89,18 @@ test("getDirectModels：免鉴权，只带车道与机器指纹", async () => {
     },
   });
   assert.equal(captured.url, "https://api.deepai.org/deepai_code/models");
-  assert.equal(captured.headers["Api-Key"], undefined);
+  assert.equal(captured.headers["Api-Key"], "model-key");
   assert.equal(captured.headers["X-DeepAI-Code-Machine"], "fp");
+
+  let keyless = null;
+  await getDirectModels("https://api.deepai.org", {
+    machineFp: "fp",
+    fetchImpl: async (url, init) => {
+      keyless = { headers: init.headers };
+      return jsonResponse({ models: [] });
+    },
+  });
+  assert.equal(keyless.headers["Api-Key"], undefined);
 });
 
 test("getTheos：URL 与头正确", async () => {

@@ -61,11 +61,12 @@ export const DeepAICodePlugin = async (input = {}, options = {}) => {
     if (opts.debug) console.error(`[magpie-deepaicode] ${level}: ${message}`);
   };
 
-  /** 拉目录：上游 /deepai_code/models。 */
+  /** 拉目录：上游 /deepai_code/models。2026-11-14 起该端点要求鉴权，必须带 key。 */
   async function loadCatalog(settings) {
     return catalogCache.get(settings.origin, async () => {
-      const lane = await resolveLaneVersion(settings.origin, { explicit: settings.laneVersion, fetchImpl });
+      const lane = await resolveLaneVersion(settings.origin, { explicit: settings.laneVersion, fetchImpl, key: settings.key });
       const payload = await getDirectModels(settings.origin, {
+        key: settings.key,
         machineFp: settings.machineFp,
         laneVersion: lane,
         fetchImpl,
@@ -109,7 +110,7 @@ export const DeepAICodePlugin = async (input = {}, options = {}) => {
     if (cached && Date.now() - cached.at < cached.ttl) return cached.value;
 
     try {
-      const lane = await resolveLaneVersion(settings.origin, { explicit: settings.laneVersion, fetchImpl });
+      const lane = await resolveLaneVersion(settings.origin, { explicit: settings.laneVersion, fetchImpl, key: settings.key });
       const [allowancePayload, summary] = await Promise.all([
         getDirectTheos(settings.origin, {
           key: settings.key,
@@ -160,7 +161,7 @@ export const DeepAICodePlugin = async (input = {}, options = {}) => {
     }
 
     try {
-      const lane = await resolveLaneVersion(settings.origin, { explicit: settings.laneVersion, fetchImpl });
+      const lane = await resolveLaneVersion(settings.origin, { explicit: settings.laneVersion, fetchImpl, key: settings.key });
       const payload = await getDirectTheos(settings.origin, {
         key: settings.key,
         machineFp: settings.machineFp,

@@ -83,7 +83,8 @@ async function runDirect(args) {
 
   let code = 0;
   await timed("models", async () => {
-    const payload = await getDirectModels(origin, { machineFp });
+    // 2026-11-14 起上游 /models 要求鉴权（无 key 401），探针带 key 请求
+    const payload = await getDirectModels(origin, { key, machineFp });
     const models = payload?.models ?? [];
     step("models", { count: models.length, default: String(payload?.default ?? "(none)") });
   }).catch((err) => { code = 1; fail("models", err); });

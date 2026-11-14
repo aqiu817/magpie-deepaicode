@@ -155,8 +155,8 @@ export function createLoader(auth, options = {}, { fetchImpl = globalThis.fetch 
   const targets = loaderTargets(settings);
   const headers = modeHeaders(settings);
   const lang = resolveLang(options);
-  // laneVersion: "auto" 时这里会发起探测（每 origin 进程内一次）；显式值直接兑现
-  const laneP = resolveLaneVersion(settings.origin, { explicit: settings.laneVersion, fetchImpl });
+  // laneVersion: "auto" 时这里会发起探测（每 origin 进程内一次；/models 也要求鉴权，带上 key）；显式值直接兑现
+  const laneP = resolveLaneVersion(settings.origin, { explicit: settings.laneVersion, fetchImpl, key: settings.key });
 
   const loader = {
     baseURL: targets.baseURL,

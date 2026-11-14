@@ -30,7 +30,7 @@
 |---|---|---|---|
 | POST | `/deepai_code/chat/completions` | 推理（OpenAI chat 兼容，支持 tools / 图片） | `Api-Key` |
 | POST | `/deepai_code/responses` | 推理（仅 `api=openai-responses` 的模型，如 `gpt-6-astra`） | `Api-Key` |
-| GET | `/deepai_code/models` | 模型目录 | **免鉴权** |
+| GET | `/deepai_code/models` | 模型目录 | `Api-Key`（**2026-11-14 起**；此前免鉴权） |
 | GET | `/deepai_code/theos` | 免费额度 / 余额 | `Api-Key` |
 | GET | `/get_usage_summary` | 订阅与用量摘要（根路径） | `Api-Key` |
 | GET | `/deepai_code/desktop_auth/?state=…&port=…` | 浏览器登录起点 | 无 |
@@ -44,7 +44,7 @@
 |---|---|---|
 | `User-Agent` | `magpie-deepaicode/<version>`（**必须显式**） | 2026-11-07 起上游 WAF 对 `user-agent: node`（Node 宿主 undici fetch 默认值）在 /chat/completions 上 400；curl / Bun / Electron 自带 UA 不受影响，显式 UA 对所有宿主无害 |
 | `Api-Key` | 账号 Key（UUID 形态 `8-4-4-4-12`） | **鉴权走这个头，不是 `Authorization`** |
-| `X-DeepAI-Code-Theos` | `4`（插件默认 `"auto"` 自动探测） | 计费车道版本。白名单实测（2026-11-08）：`2`/`4` → 200，`5` → 426；错值 426。`/models` 免鉴权即可探测，插件按 `["4","5","6","8","12","3","2"]` 顺序取第一个受理值并进程内缓存 |
+| `X-DeepAI-Code-Theos` | `4`（插件默认 `"auto"` 自动探测） | 计费车道版本。白名单实测（2026-11-08）：`2`/`4` → 200，`5` → 426；错值 426。`/models` 探测（2026-11-14 起需带 `Api-Key`，无 key 401），插件按 `["4","5","6","8","12","3","2"]` 顺序取第一个受理值并进程内缓存 |
 | `X-DeepAI-Code-Instance` | 每进程随机 32 hex（同桌面端 `DEEPAI_LANE_HEADERS` 生成方式） | 客户端实例标识；桌面端对齐项 |
 | `X-DeepAI-Code-Machine` | `sha256(小写原始 UUID)` 十六进制 | 每日免费额度的分配键 |
 | `X-Session-Affinity` | 任意会话 id | 会话粘性（body 的 `prompt_cache_key` 同效） |
@@ -100,7 +100,8 @@ secrets : <base>/userdata/secrets → <base>/secrets → <base>/dev/secrets
 
 ### 1.6 模型目录快照（2026-11-08 实测）
 
-`GET /deepai_code/models` **免鉴权**（需车道头 + 机器指纹头），实测 HTTP 200，18 个模型，默认 `glm-5.3-flash`。
+`GET /deepai_code/models` **需 `Api-Key`（2026-11-14 起；此前免鉴权，无 key 现在 401）**，
+另需车道头 + 机器指纹头。实测 HTTP 200，18 个模型，默认 `glm-5.3-flash`。
 字段：`{id, name, reasoning, input[], contextWindow, maxTokens, premier, theosPerRequest, api?}`。
 
 | id | 名称 | API | 免费 | 上下文 | 输入 | Theos/请求 |
@@ -131,7 +132,7 @@ secrets : <base>/userdata/secrets → <base>/secrets → <base>/dev/secrets
 3. SSE 同一事件可能有多行 `data:`，按规范用 `\n` 拼接后再解析。
 4. 无效 Key 会 302 跳登录页——所有请求必须禁止跟随重定向。
 5. `prompt_cache_key`（body）与 `X-Session-Affinity`（头）都影响上游调度。
-6. 上游对 `/models` 的车道值做白名单校验（`2`/`4` → 200，`5` → 426），且免鉴权、无签到副作用——插件默认 `laneVersion: "auto"` 利用这一点自动跟进未来升车道，无需发版。
+6. 上游对 `/models` 的车道值做白名单校验（`2`/`4` → 200，`5` → 426），且无签到副作用——插件默认 `laneVersion: "auto"` 利用这一点自动跟进未来升车道，无需发版。注意 `/models` 自 2026-11-14 起要求 `Api-Key`（无 key 401），探测必须带 key。
 7. 2026-11-07 的"lane 2 全线 426"观察是 `user-agent: node` 污染下的测量假象（[#5](https://github.com/aqiu817/magpie-deepaicode/pull/5) 定位）；排查这类协议问题时先固定 UA 再下结论。
 
 ---
