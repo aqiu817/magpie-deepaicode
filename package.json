@@ -1,6 +1,6 @@
 {
   "name": "magpie-deepaicode",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "OpenCode provider plugin: DeepAI Code models, direct to the upstream",
   "type": "module",
   "main": "./index.mjs",
@@ -24,7 +24,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/aqiu817/magpie-deepaicode"
+    "url": "git+https://github.com/aqiu817/magpie-deepaicode.git"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
