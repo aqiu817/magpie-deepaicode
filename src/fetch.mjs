@@ -122,10 +122,52 @@ function jsonError(status, message, type = "invalid_request_error") {
 }
 
 /**
+ * SSE 截断检测：上游（或中间链路，如代理重置）可能以 200 开始流式响应却在
+ * 收尾前断流（无 `data: [DONE]`、无 finish_reason）。不设防的话调用方会把
+ * 半截流当成完整回合（"200 + unexpected EOF"，issue #9）。
+ *
+ * 做法：在响应体上包一层 TransformStream——主流逐字节原样透传（不缓冲、
+ * 延迟不增加），只保留**尾部窗口**；流正常关闭时检查窗口内是否有终止标记
+ * （`[DONE]` 或任一 finish_reason）。缺失则在流尾注入一条 `error` SSE 事件
+ * 再关闭，让严格客户端把该回合判为失败而不是吞下半截回复。
+ * 响应不是 text/event-stream 时原样返回，不做检查。
+ */
+const SSE_TAIL_WINDOW = 4096;
+
+export function guardStreamTruncation(res) {
+  const ct = String(res.headers.get("content-type") ?? "");
+  if (!ct.includes("text/event-stream") || !res.body) return res;
+
+  let tail = "";
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  const check = new TransformStream({
+    transform(chunk, controller) {
+      const text = typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
+      tail = (tail + text).slice(-SSE_TAIL_WINDOW);
+      controller.enqueue(chunk);
+    },
+    flush(controller) {
+      const done = /\[DONE\]|"finish_reason"\s*:\s*"[a-z_]+"|'finish_reason'\s*:\s*'[a-z_]+'/i.test(tail);
+      if (!done) {
+        const frame = 'data: {"error":{"message":"upstream closed the SSE stream before [DONE] (truncated)","type":"upstream_error","code":"unexpected_eof"}}\n\n';
+        controller.enqueue(encoder.encode(frame));
+      }
+    },
+  });
+
+  const watched = res.body.pipeThrough(check, { highWaterMark: 0 });
+  const headers = new Headers(res.headers);
+  headers.delete("content-length");
+  return new Response(watched, { status: res.status, statusText: res.statusText, headers });
+}
+
+/**
  * 错误语义映射（见 PROTOCOL.md）。
- * 只在非 2xx 时调用；2xx 一律原样返回（流式体不碰）。
+ * 2xx 交由 guardStreamTruncation 检查流式截断；非 2xx 做语义映射。
  */
 export async function guardResponse(res) {
+  if (res.ok) return guardStreamTruncation(res);
   // 容量拒绝：magpie 只对 429/5xx 做账号故障转移，409（session_busy）会直接落到 agent。
   if (res.status === 409) {
     const body = await res.text();

@@ -169,6 +169,46 @@ test("guardResponse：403 email_unverified 标记登录失效", async () => {
   assert.equal(res.headers.get("x-magpie-sign-in"), "expired");
 });
 
+test("guardResponse：SSE 正常收尾（[DONE]）逐字节透传，不注入错误帧", async () => {
+  const raw = 'data: {"choices":[{"delta":{"content":"hi"}}]}\n\ndata: [DONE]\n\n';
+  const res = await guardResponse(
+    new Response(raw, { status: 200, headers: { "content-type": "text/event-stream" } }),
+  );
+  const text = await res.text();
+  assert.equal(text, raw, "完整流必须一字不差");
+  assert.doesNotMatch(text, /unexpected_eof/);
+});
+
+test("guardResponse：SSE 以 finish_reason 收尾也不注入", async () => {
+  const raw = 'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n';
+  const res = await guardResponse(
+    new Response(raw, { status: 200, headers: { "content-type": "text/event-stream" } }),
+  );
+  const text = await res.text();
+  assert.equal(text, raw);
+});
+
+test("guardResponse：SSE 截断（无 [DONE]/finish_reason）→ 流尾注入 unexpected_eof 错误帧", async () => {
+  const raw = 'data: {"choices":[{"delta":{"content":"half of a long reply…"}}]}\n\n';
+  const res = await guardResponse(
+    new Response(raw, { status: 200, headers: { "content-type": "text/event-stream" } }),
+  );
+  assert.equal(res.status, 200);
+  const text = await res.text();
+  // 原始内容保留，且追加了显式的截断错误帧
+  assert.match(text, /half of a long reply/);
+  assert.match(text, /unexpected_eof/);
+  assert.match(text, /truncated/);
+});
+
+test("guardResponse：非 SSE 的 200 原样返回，不做截断检查", async () => {
+  const raw = '{"choices":[{"message":{"content":"ok"}}]}';
+  const res = await guardResponse(
+    new Response(raw, { status: 200, headers: { "content-type": "application/json" } }),
+  );
+  assert.equal(await res.text(), raw);
+});
+
 test("loader.fetch：302（redirect:error）→ 401 且文案可读", async () => {
   const loader = createLoader(directAuth(), { ...LANE_OPTS }, {
     fetchImpl: async () => {

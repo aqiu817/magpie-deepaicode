@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.5 — 2026-11-19
+
+回应 [issue #9](https://github.com/aqiu817/magpie-deepaicode/issues/9)（长对话 `200 + unexpected EOF`）：
+
+- **SSE 截断检测**：流式响应现在包一层透传检查——主路径逐字节原样（不缓冲、
+  延迟不增加），只保留尾部 4 KiB 窗口；流关闭时若无 `[DONE]` 也无任何
+  `finish_reason` 帧，在流尾注入一条
+  `data: {"error":{...,"code":"unexpected_eof"}}` 事件再关闭。严格客户端
+  （OpenCode 等）会把该回合判为失败，而不是把半截回复当成"成功"存档。
+- 说明：该截断在报告者的环境里根因是**本地代理中途重置连接**（geo-block 网络层），
+  插件无法阻止断流本身，但能把"静默的半截成功"变成"显式的失败"。
+- 非流式（`content-type: application/json`）响应不检查，行为不变。
+
 ## 0.2.4 — 2026-11-14
 
 上游把 `/deepai_code/models` 从免鉴权改成了**要求 `Api-Key`**（无 key 直接 401）。
