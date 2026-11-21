@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.6 — 2026-11-21
+
+修复满额 Theos 窗口在 Magpie 中被当作“额度未知”：
+
+- **满额也给读数**：`buildDirectUsage` 在 `granted > 0` 时现在同时发送
+  `used`（已用百分比）。此前满额窗口只发 `amount: 0`，而 Magpie 的插件契约把
+  `amount: 0` 当作“没有给计数”（JSON 序列化时 0 还会被 `omitempty` 省略），
+  于是窗口被标成 `text + aside`，`allowanceOf` 直接跳过它，路由端只能显示
+  “剩余额度未知”。
+- 满额 78/78 Theos 现在输出 `amount: 0`、`limit: 78`、`used: 0`，
+  Magpie 能正常算出 `used=0`、采用 `resetsAt`，并参与“额度优先”排序。
+- 新增两个单测：满额 78/78、部分使用 39/78；69 项测试全绿。
+
 ## 0.2.5 — 2026-11-19
 
 回应 [issue #9](https://github.com/aqiu817/magpie-deepaicode/issues/9)（长对话 `200 + unexpected EOF`）：
