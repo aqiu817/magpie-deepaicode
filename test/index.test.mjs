@@ -40,7 +40,7 @@ test("config 钩子：不覆盖已有供应商，且默认模型齐全", async (
   assert.equal(fresh.provider.deepaicode.npm, "@ai-sdk/openai-compatible");
   assert.equal(fresh.provider.deepaicode.api, "https://api.deepai.org/deepai_code");
   assert.equal(fresh.provider.deepaicode.models["glm-5.3-flash"].provider, undefined);
-  assert.equal(Object.keys(fresh.provider.deepaicode.models).length, 18);
+  assert.equal(Object.keys(fresh.provider.deepaicode.models).length, 27);
   assert.equal(fresh.provider.deepaicode.models["gpt-6-astra"].provider.npm, "@ai-sdk/openai");
 });
 

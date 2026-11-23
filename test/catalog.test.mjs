@@ -106,12 +106,16 @@ test("modelsFromCatalog：键为 id，并展开基础模型", () => {
   assert.equal(out["glm-5.3-flash"].name, "GLM 5.3 Flash");
 });
 
-test("兜底快照：18 个、9 免费、不含别名", () => {
+test("兜底快照：27 个、11 免费、不含别名", () => {
   const list = fallbackModels({});
   assert.equal(Object.keys(list).length, FALLBACK_MODELS.length);
-  assert.equal(FALLBACK_MODELS.length, 18);
-  assert.equal(FALLBACK_MODELS.filter((m) => m.theosPerRequest === "0").length, 9);
+  assert.equal(FALLBACK_MODELS.length, 27);
+  assert.equal(FALLBACK_MODELS.filter((m) => m.theosPerRequest === "0").length, 11);
   assert.equal(list["gpt-6-astra"].provider.npm, "@ai-sdk/openai");
+  // issue #11：快照 contextWindow 必须与上游真值一致（全线 320k，不许再写 1M）
+  for (const m of FALLBACK_MODELS) {
+    assert.equal(m.contextWindow, m.id === "glyph-cluster" ? 256000 : 320000, `${m.id} contextWindow 应为 320k/256k`);
+  }
 });
 
 test("目录缓存：TTL 内命中、TTL 外重取、失败不写入", async () => {

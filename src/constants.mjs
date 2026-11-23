@@ -65,32 +65,43 @@ export const USAGE_TTL_ERR_MS = 600_000;
 export const CHECKIN_LOCK_TTL_MS = 6 * 60 * 60 * 1000;
 
 /**
- * 上游模型目录不可用时的兜底快照（2026-11-08 实测，18 个）。
+ * 上游模型目录不可用时的兜底快照（2026-11-23 实测，27 个）。
  * 只用于“没登录 / 目录请求失败”时仍然有模型可选；正常路径永远以动态目录为准。
+ * contextWindow 已同步 2026-11-23 上游真值（全线 320k；上游 11-08~11-23 之间
+ * 从 1M 自降，见 issue #11——目录声明与后端实际 serve 窗口可能仍有出入）。
  */
 export const FALLBACK_MODELS = [
-  { id: "glm-5.3-flash", name: "GLM 5.3 Flash", reasoning: true, input: ["text", "image"], contextWindow: 1048576, maxTokens: 131072, premier: false, theosPerRequest: "0" },
-  { id: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash", reasoning: true, input: ["text", "image"], contextWindow: 1048576, maxTokens: 131072, premier: false, theosPerRequest: "0" },
-  { id: "mimo-2.6-flash", name: "MiMo 2.6 Flash", reasoning: true, input: ["text", "image"], contextWindow: 1048576, maxTokens: 131072, premier: false, theosPerRequest: "0" },
-  { id: "solar-mini-4", name: "Solar Mini 4", reasoning: true, input: ["text"], contextWindow: 524288, maxTokens: 131072, premier: false, theosPerRequest: "0" },
-  { id: "gpt-6-luna", name: "GPT-6 Luna", reasoning: true, input: ["text", "image"], contextWindow: 1048576, maxTokens: 128000, premier: false, theosPerRequest: "0" },
-  { id: "mimo-2.6-pro", name: "MiMo 2.6 Pro", reasoning: true, input: ["text", "image"], contextWindow: 1048576, maxTokens: 131072, premier: false, theosPerRequest: "0" },
-  { id: "crouton-alpha", name: "Crouton Alpha", reasoning: true, input: ["text", "image"], contextWindow: 1048576, maxTokens: 131072, premier: false, theosPerRequest: "0" },
+  { id: "glm-5.3-flash", name: "GLM 5.3 Flash", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 131072, premier: false, theosPerRequest: "0" },
+  { id: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 131072, premier: false, theosPerRequest: "0" },
+  { id: "mimo-2.6-flash", name: "MiMo 2.6 Flash", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 131072, premier: false, theosPerRequest: "0" },
+  { id: "qwen-3.8-flash", name: "Qwen 3.8 Flash", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 128000, premier: false, theosPerRequest: "0" },
+  { id: "minimax-m3.1-flash", name: "MiniMax M3.1 Flash", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 131072, premier: false, theosPerRequest: "0" },
+  { id: "muse-ember", name: "Muse Ember", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 131072, premier: false, theosPerRequest: "0" },
+  { id: "solar-mini-4", name: "Solar Mini 4", reasoning: true, input: ["text"], contextWindow: 320000, maxTokens: 131072, premier: false, theosPerRequest: "0" },
+  { id: "gpt-6-luna", name: "GPT-6 Luna", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 128000, premier: false, theosPerRequest: "0" },
+  { id: "mimo-2.6-pro", name: "MiMo 2.6 Pro", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 131072, premier: false, theosPerRequest: "0" },
   { id: "glyph-cluster", name: "Glyph Cluster", reasoning: true, input: ["text"], contextWindow: 256000, maxTokens: 131072, premier: false, theosPerRequest: "0" },
-  { id: "deepai-cyber", name: "DeepAI Cyber", reasoning: true, input: ["text"], contextWindow: 65536, maxTokens: 8192, premier: false, theosPerRequest: "0" },
-  { id: "gpt-6.1-sol", name: "GPT-6.1 Sol", reasoning: true, input: ["text", "image"], contextWindow: 1048576, maxTokens: 128000, premier: true, theosPerRequest: "10" },
-  { id: "gemini-4-argon", name: "Gemini 4 Argon", reasoning: true, input: ["text", "image"], contextWindow: 1048576, maxTokens: 131072, premier: true, theosPerRequest: "10" },
-  { id: "glm-5.3", name: "GLM 5.3", reasoning: true, input: ["text"], contextWindow: 1048576, maxTokens: 131072, premier: true, theosPerRequest: "3" },
-  { id: "kimi-k3", name: "Kimi K3", reasoning: true, input: ["text", "image"], contextWindow: 1048576, maxTokens: 131072, premier: true, theosPerRequest: "3" },
-  { id: "muse-spark-1.3", name: "Muse Spark 1.3", reasoning: true, input: ["text", "image"], contextWindow: 1048576, maxTokens: 131072, premier: true, theosPerRequest: "6" },
-  { id: "claude-opus-5-5", name: "Claude Opus 5.5", reasoning: true, input: ["text", "image"], contextWindow: 1000000, maxTokens: 64000, premier: true, theosPerRequest: "15" },
-  { id: "muse-wonder", name: "Muse Wonder", reasoning: true, input: ["text", "image"], contextWindow: 1048576, maxTokens: 131072, premier: true, theosPerRequest: "15" },
-  { id: "claude-fable-5-1", name: "Claude Fable 5.1", reasoning: true, input: ["text", "image"], contextWindow: 1000000, maxTokens: 64000, premier: true, theosPerRequest: "25" },
-  { id: "gpt-6-astra", name: "GPT-6 Astra", reasoning: true, input: ["text", "image"], contextWindow: 1048576, maxTokens: 128000, premier: true, theosPerRequest: "50", api: "openai-responses" },
+  { id: "deepai-cyber", name: "DeepAI Cyber", reasoning: true, input: ["text"], contextWindow: 320000, maxTokens: 131072, premier: false, theosPerRequest: "0" },
+  { id: "minimax-m3", name: "MiniMax M3", reasoning: true, input: ["text"], contextWindow: 320000, maxTokens: 131000, premier: true, theosPerRequest: "3" },
+  { id: "gpt-6.1-sol", name: "GPT-6.1 Sol", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 128000, premier: true, theosPerRequest: "10" },
+  { id: "gemini-4-argon", name: "Gemini 4 Argon", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 131072, premier: true, theosPerRequest: "10" },
+  { id: "glm-5.3", name: "GLM 5.3", reasoning: true, input: ["text"], contextWindow: 320000, maxTokens: 131072, premier: true, theosPerRequest: "3" },
+  { id: "kimi-k3", name: "Kimi K3", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 131072, premier: true, theosPerRequest: "3" },
+  { id: "kimi-k3.1-pro", name: "Kimi K3.1 Pro", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 131072, premier: true, theosPerRequest: "3" },
+  { id: "gpt-6.1-terra", name: "GPT-6.1 Terra", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 128000, premier: true, theosPerRequest: "3" },
+  { id: "muse-spark-1.3", name: "Muse Spark 1.3", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 131072, premier: true, theosPerRequest: "6" },
+  { id: "gemini-4-hydrogen", name: "Gemini 4 Hydrogen", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 131072, premier: true, theosPerRequest: "6" },
+  { id: "gemini-4-carbon", name: "Gemini 4 Carbon", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 131072, premier: true, theosPerRequest: "10" },
+  { id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 64000, premier: true, theosPerRequest: "15" },
+  { id: "claude-opus-5-5", name: "Claude Opus 5.5", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 64000, premier: true, theosPerRequest: "15" },
+  { id: "muse-wonder", name: "Muse Wonder", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 131072, premier: true, theosPerRequest: "15" },
+  { id: "qwen-3.8-max-prime", name: "Qwen 3.8 Max Prime", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 131072, premier: true, theosPerRequest: "15" },
+  { id: "claude-fable-5-2", name: "Claude Fable 5.2", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 64000, premier: true, theosPerRequest: "25" },
+  { id: "gpt-6-astra", name: "GPT-6 Astra", reasoning: true, input: ["text", "image"], contextWindow: 320000, maxTokens: 128000, premier: true, theosPerRequest: "50", api: "openai-responses" },
 ];
 
 /** 模型目录快照的采集日期（写进 PROTOCOL.md / README，避免被当成实时数据）。 */
-export const FALLBACK_SNAPSHOT_DATE = "2026-11-08";
+export const FALLBACK_SNAPSHOT_DATE = "2026-11-23";
 
 export const DEFAULT_OPTIONS = {
   baseOrigin: DEFAULT_BASE_ORIGIN,
