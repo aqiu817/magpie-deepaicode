@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.6 — 2026-11-23
+
+回应 [issue #11](https://github.com/aqiu817/magpie-deepaicode/issues/11)（目录 1M vs 实测截断）：
+
+- **兜底快照同步上游真值**：`FALLBACK_MODELS` 从 2026-11-08 的 18 个（写死 1M
+  contextWindow）更新为 2026-11-23 实测的 27 个（上游已全线自降 **320k**，
+  `glyph-cluster` 256k），快照日期同步。此前该 1M 值只影响 fallback 路径
+  （未登录 / 目录请求失败时）；正常路径一直以动态目录为准，上游降值后即跟随。
+- 真机复核（免费档，needle-in-head 爬梯 30k→100k + head/mid/tail 位置对照）：
+  超过约 45k 后上游**不是线性截断**，而是把请求压缩成约 2k tokens 的摘要再喂给
+  模型——头部与尾部内容可存活、中部丢失（`prompt_tokens` 钉在 ~2000 而非
+  报告者测到的 ~40k；其 40k 数据更接近"上游按 40k 硬裁"的旧形态或另一条链路）。
+  **结论不变：上游实际可用的有效上下文远小于目录声明（320k 也不可信），长会话
+  的中段内容会被静默压缩丢失。** 插件层无法修复上游行为，快照与动态目录已按
+  上游声明对齐。
+
 ## 0.2.5 — 2026-11-19
 
 回应 [issue #9](https://github.com/aqiu817/magpie-deepaicode/issues/9)（长对话 `200 + unexpected EOF`）：
