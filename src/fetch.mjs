@@ -81,14 +81,15 @@ export function shapeRequestBody(target, body) {
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
 
   let changed = false;
-  if (target.endsWith(CHAT_SUFFIX) && Array.isArray(parsed.messages) && parsed.messages.length > 0) {
+  const pathname = new URL(target).pathname;
+  if (pathname.endsWith(CHAT_SUFFIX) && Array.isArray(parsed.messages) && parsed.messages.length > 0) {
     const first = parsed.messages[0];
     const role = first && typeof first === "object" ? String(first.role ?? "") : "";
     if (role !== "system" && role !== "developer") {
       parsed.messages = [{ role: "system", content: SHAPE_SYSTEM_MESSAGE }, ...parsed.messages];
       changed = true;
     }
-  } else if (target.endsWith(RESPONSES_SUFFIX)) {
+  } else if (pathname.endsWith(RESPONSES_SUFFIX)) {
     if (typeof parsed.instructions !== "string" || parsed.instructions.trim() === "") {
       parsed.instructions = SHAPE_SYSTEM_MESSAGE;
       changed = true;
@@ -114,8 +115,8 @@ function rebuildResponse(res, { status = res.status, body = null, extraHeaders =
   return new Response(body, { status, statusText: res.statusText || "", headers });
 }
 
-function jsonError(status, message, type = "invalid_request_error") {
-  return new Response(JSON.stringify({ error: { message, type, code: status } }), {
+function jsonError(status, message, type = "invalid_request_error", code = status) {
+  return new Response(JSON.stringify({ error: { message, type, code } }), {
     status,
     headers: { "content-type": "application/json; charset=utf-8" },
   });
@@ -197,8 +198,7 @@ export function createLoader(auth, options = {}, { fetchImpl = globalThis.fetch 
   const targets = loaderTargets(settings);
   const headers = modeHeaders(settings);
   const lang = resolveLang(options);
-  // laneVersion: "auto" 时这里会发起探测（每 origin 进程内一次；/models 也要求鉴权，带上 key）；显式值直接兑现
-  const laneP = resolveLaneVersion(settings.origin, { explicit: settings.laneVersion, fetchImpl, key: settings.key });
+  let laneP;
 
   const loader = {
     baseURL: targets.baseURL,
@@ -208,6 +208,26 @@ export function createLoader(auth, options = {}, { fetchImpl = globalThis.fetch 
       // URL 一律从配置的基地址重建：magpie 传进来的主机/路径只用来判断
       // 是 chat 还是 responses，凭据永远不会被发往别的主机。
       const target = normalizeIncomingUrl(input, settings);
+      const maxInputBytes = Number(options.maxInputBytes);
+      const guarded = Number.isSafeInteger(maxInputBytes) && maxInputBytes > 0;
+      if (guarded && ((init.body != null && typeof init.body !== "string") || (input instanceof Request && init.body == null && input.body))) {
+        const message = lang === "en"
+          ? "DeepAI Code's input safety limit requires a JSON string body; this body cannot be checked safely."
+          : "DeepAI Code 输入安全限制要求 JSON 字符串请求体；当前请求体无法安全检查。";
+        return jsonError(400, message);
+      }
+      const shaped = shapeRequestBody(target, init?.body);
+      const outgoing = shaped === null ? init : { ...init, body: shaped };
+      if (guarded && typeof outgoing.body === "string") {
+        const inputBytes = new TextEncoder().encode(outgoing.body).byteLength;
+        if (inputBytes > maxInputBytes) {
+          const message = lang === "en"
+            ? `DeepAI Code input is ${inputBytes} bytes, above the configured safety limit of ${maxInputBytes}. Compact the conversation or use another provider; oversized inputs may silently lose context upstream.`
+            : `DeepAI Code 输入为 ${inputBytes} 字节，超过本机安全上限 ${maxInputBytes}。请压缩会话或换用其他渠道；上游可能对超长输入静默丢失上下文。`;
+          return jsonError(400, message, "invalid_request_error", "context_length_exceeded");
+        }
+      }
+      laneP ??= resolveLaneVersion(settings.origin, { explicit: settings.laneVersion, fetchImpl, key: settings.key });
       const lane = await laneP;
 
       const merged = new Headers(init?.headers ?? {});
@@ -216,10 +236,6 @@ export function createLoader(auth, options = {}, { fetchImpl = globalThis.fetch 
       if (settings.machineFp) {
         merged.set(HEADER_MACHINE, settings.machineFp);
       }
-
-      // 上游校验请求形状：缺 system / instructions 时补最简值
-      const shaped = shapeRequestBody(target, init?.body);
-      const outgoing = shaped === null ? init : { ...init, body: shaped };
 
       let res;
       try {

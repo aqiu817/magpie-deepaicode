@@ -71,6 +71,12 @@ deepaicode/gpt-6-astra            # 仅 Responses 通道
 | `secretDir` | `""` | 桌面端凭据目录（留空自动探测） |
 | `lang` | `zh` | 界面语言（`zh` \| `en`） |
 | `debug` | `false` | 输出详细日志——只记录字段**名**，不记录值 |
+| `maxInputBytes` | `0`（关闭） | 请求 JSON 的 UTF-8 字节上限（包含指令、历史、工具及图片）。超出时在本地返回 `400 context_length_exceeded`，不截断、不调用推理接口。可用于防范上游超长输入静默丢上下文；字节数不是 token 数，不能保证所有小于上限的请求质量。 |
+
+例如 `magpie plugin options magpie-deepaicode '{"maxInputBytes":100000}'` 可启用保守的本机保护。
+按补齐 system / instructions 后实际发送的 JSON 计数；启用后，非字符串请求体会被拒绝，避免绕过检查。
+拒绝发生在车道探测和推理请求之前。此选项不修复上游，亦不自动压缩会话；请先主动压缩或换用可信的长上下文渠道。
+标准 `context_length_exceeded` 供客户端处理，但不保证每个客户端会自动压缩或切换。
 
 ## 排查
 

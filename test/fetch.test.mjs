@@ -15,6 +15,91 @@ function directAuth(options = {}) {
 // 测试里显式给 lane，避免触发 auto 探测
 const LANE_OPTS = { laneVersion: "4" };
 
+test("loader.fetch: configured input byte limit rejects before upstream without truncating", async () => {
+  let calls = 0;
+  const loader = createLoader(directAuth(), { ...LANE_OPTS, maxInputBytes: 1000 }, {
+    fetchImpl: async () => {
+      calls += 1;
+      return new Response("{}");
+    },
+  });
+  const response = await loader.fetch("https://api.deepai.org/deepai_code/chat/completions", {
+    method: "POST",
+    body: JSON.stringify({ messages: [{ role: "system", content: "中文".repeat(200) }] }),
+  });
+  assert.equal(response.status, 400);
+  assert.equal(calls, 0);
+  const payload = await response.json();
+  assert.equal(payload.error.code, "context_length_exceeded");
+  assert.match(payload.error.message, /1000/);
+});
+
+test("loader.fetch: input limit counts instructions, history and tools and preserves allowed bytes", async () => {
+  const forwarded = [];
+  const loader = createLoader(directAuth(), { ...LANE_OPTS, maxInputBytes: 1000 }, {
+    fetchImpl: async (url, init) => {
+      forwarded.push(init.body);
+      return new Response("{}");
+    },
+  });
+  const small = JSON.stringify({ instructions: "只用中文", input: [{ role: "user", content: "你好" }] });
+  assert.equal((await loader.fetch("https://x/responses", { body: small })).status, 200);
+  assert.equal(forwarded[0], small);
+  const large = JSON.stringify({ instructions: "中文", input: [], tools: [{ description: "文".repeat(500) }] });
+  const refused = await loader.fetch("https://x/responses?beta=1", { body: large });
+  assert.equal(refused.status, 400);
+  assert.equal(forwarded.length, 1);
+});
+
+test("loader.fetch: input limit is opt-in", async () => {
+  const loader = createLoader(directAuth(), LANE_OPTS, { fetchImpl: async () => new Response("{}") });
+  const body = JSON.stringify({ instructions: "x".repeat(2000), input: [] });
+  assert.equal((await loader.fetch("https://x/responses", { body })).status, 200);
+});
+
+test("loader.fetch: input limit includes inserted system message and accepts the exact boundary", async () => {
+  let calls = 0;
+  const original = JSON.stringify({ messages: [{ role: "user", content: "你好" }] });
+  const shaped = shapeRequestBody("https://x/chat/completions", original);
+  const bytes = new TextEncoder().encode(shaped).byteLength;
+  const upstream = async () => { calls += 1; return new Response("{}"); };
+  const strict = createLoader(directAuth(), { ...LANE_OPTS, maxInputBytes: bytes - 1 }, { fetchImpl: upstream });
+  assert.equal((await strict.fetch("https://x/chat/completions", { body: original })).status, 400);
+  assert.equal(calls, 0);
+  const exact = createLoader(directAuth(), { ...LANE_OPTS, maxInputBytes: bytes }, { fetchImpl: upstream });
+  assert.equal((await exact.fetch("https://x/chat/completions", { body: original })).status, 200);
+  assert.equal(calls, 1);
+});
+
+test("loader.fetch: over-limit rejection does not even probe the lane", async () => {
+  let calls = 0;
+  const loader = createLoader(directAuth(), { maxInputBytes: 100 }, {
+    fetchImpl: async () => { calls += 1; return new Response("{}"); },
+  });
+  await loader.fetch("https://x/chat/completions", { body: "x".repeat(101) });
+  assert.equal(calls, 0);
+});
+
+test("loader.fetch: enabled input guard cannot be bypassed by a non-text body", async () => {
+  let calls = 0;
+  const loader = createLoader(directAuth(), { ...LANE_OPTS, maxInputBytes: 100 }, {
+    fetchImpl: async () => { calls += 1; return new Response("{}"); },
+  });
+  const response = await loader.fetch("https://x/chat/completions", { body: new Uint8Array(101) });
+  assert.equal(response.status, 400);
+  assert.equal(calls, 0);
+  const request = new Request("https://x/chat/completions", { method: "POST", body: "x".repeat(101) });
+  assert.equal((await loader.fetch(request)).status, 400);
+  assert.equal(calls, 0);
+});
+
+test("shapeRequestBody: endpoint query strings still receive required instructions", () => {
+  const chat = JSON.parse(shapeRequestBody("https://x/chat/completions?beta=1", JSON.stringify({ messages: [{ role: "user", content: "你好" }] })));
+  assert.equal(chat.messages[0].role, "system");
+  const responses = JSON.parse(shapeRequestBody("https://x/responses?beta=1", JSON.stringify({ input: [] })));
+  assert.ok(responses.instructions);
+});
+
 test("normalizeIncomingUrl：直连模式归一到 /deepai_code/{chat,responses}", () => {
   const settings = resolveAccountSettings(directAuth(), { baseOrigin: "https://api.deepai.org", ...LANE_OPTS });
   assert.equal(

@@ -105,6 +105,7 @@ export const FALLBACK_SNAPSHOT_DATE = "2026-11-23";
 
 export const DEFAULT_OPTIONS = {
   baseOrigin: DEFAULT_BASE_ORIGIN,
+  maxInputBytes: 0,
   /** "auto"：按 LANE_PROBE_SEQUENCE 探测 /models（2026-11-14 起需带 key）取当前受理值并进程内缓存；显式值原样生效 */
   laneVersion: "auto",
   /** 界面语言：zh | en */

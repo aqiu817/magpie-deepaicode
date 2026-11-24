@@ -81,6 +81,12 @@ Pass as the plugin's `options` (Plugins → installed → options, or
 | `secretDir` | `""` | desktop credentials dir (empty = auto-detect) |
 | `lang` | `zh` | UI language (`zh` \| `en`) |
 | `debug` | `false` | verbose `console.error` logging — field **names** only, never values |
+| `maxInputBytes` | `0` (off) | Maximum UTF-8 bytes of the request JSON, including instructions, history, tools and images. Larger requests return local `400 context_length_exceeded` without truncation or a generation call. Guards against upstream silent context loss; bytes are not tokens and this cannot guarantee quality below the limit. |
+
+For example, `magpie plugin options magpie-deepaicode '{"maxInputBytes":100000}'` enables a conservative local guard.
+The limit counts the outgoing JSON after inserting any missing system/instructions. Non-string request bodies are rejected when enabled to avoid bypassing the guard.
+Rejection happens before lane probing or generation. This neither repairs the upstream nor compacts conversations: compact first or choose a trustworthy long-context provider.
+The standard `context_length_exceeded` code allows client handling, but does not guarantee automatic compaction or failover in every client.
 
 ## Troubleshooting
 

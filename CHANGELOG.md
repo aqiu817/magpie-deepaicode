@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Add opt-in `maxInputBytes`: reject oversized outgoing JSON with local `400 context_length_exceeded` before lane probing or generation, without truncation. Count inserted instructions and UTF-8 bytes, and reject unsupported body types while the guard is enabled.
+- Apply required request shaping to endpoint URLs carrying query strings as well.
+- This is a local safeguard for #11, not a fix for upstream context loss or model answer quality. No universal safe token threshold is claimed.
+
 ## 0.2.6 — 2026-11-23
 
 回应 [issue #11](https://github.com/aqiu817/magpie-deepaicode/issues/11)（目录 1M vs 实测截断）：
