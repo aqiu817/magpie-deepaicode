@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.7 — 2026-11-26
+
+**图像输入修复**（回应 [#8](https://github.com/aqiu817/magpie-deepaicode/issues/8) 与
+DeepAICode2API 的对照实验，致谢 Makuraryu 的追问与 QingLong-C 无关）：
+
+- **根因找到**：上游 `/deepai_code/chat/completions` **不接受图与文字混在同一段
+  content**（标准 OpenAI 多模态形态）——混合段会被拒绝或静默剥图。桌面端 pi
+  runtime 从不发混合段：带图消息的 content 只有图，文字在相邻消息里。
+  此前 0.2.6 及更早版本透传混合段，导致"模型看不到图 / 编造内容"。
+- **修复**：loader 新增 `splitMixedImageMessages`——chat `messages` 与 responses
+  `input` 里的混合段就地拆成**图一条 + 文字一条**（图在前），文字为裸字符串时
+  归一为 `{type:"text"}` 对象。纯图段、纯文本段、字符串 content 不动。
+- 实测：拆分形态下模型能真实描述图内容（形状/颜色/位置/OCR 逐字母）；
+  混合段形态下 `prompt_tokens` 只有 ~200（图被上游剥掉），拆分后 ~300+（图真进模型）。
+- **如实说明**：上游对拆分形态也**不是 100% 稳定**（偶发仍剥图），这是上游
+  服务端问题；但修复把成功率从"基本不可用"提升到"多数请求成功"。
+- 测试 71 个（+8：拆分边界、裸字符串形态、responses input、端到端整形）。
+
 ## 0.2.6 — 2026-11-23
 
 回应 [issue #11](https://github.com/aqiu817/magpie-deepaicode/issues/11)（目录 1M vs 实测截断）：

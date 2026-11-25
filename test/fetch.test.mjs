@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { VERSION } from "../src/constants.mjs";
-import { createLoader, guardResponse, normalizeIncomingUrl, shapeRequestBody } from "../src/fetch.mjs";
+import { createLoader, guardResponse, normalizeIncomingUrl, shapeRequestBody, splitMixedImageMessages } from "../src/fetch.mjs";
 import { resolveAccountSettings } from "../src/modes.mjs";
 
 const CHAT = "/chat/completions";
@@ -144,6 +144,71 @@ test("shapeRequestBody：chat / responses / 非 JSON 的分支", () => {
   // 非 JSON / 非 POST 体 → 不动
   assert.equal(shapeRequestBody("https://x/deepai_code" + CHAT, "not-json"), null);
   assert.equal(shapeRequestBody("https://x/deepai_code" + CHAT, ""), null);
+});
+
+test("splitMixedImageMessages：图+文混合段拆成 图一条/文字一条（图在前）", () => {
+  const img = { type: "image_url", image_url: { url: "data:image/png;base64,AAA" } };
+  const messages = [
+    { role: "system", content: "sys" },
+    { role: "user", content: [{ type: "text", text: "look" }, img, { type: "text", text: "carefully" }] },
+  ];
+  assert.equal(splitMixedImageMessages(messages), true);
+  assert.equal(messages.length, 3);
+  // 第一条 user：只剩图（顺序保持）
+  assert.deepEqual(messages[1].content, [img]);
+  // 第二条 user：只剩文字
+  assert.deepEqual(messages[2].content, [
+    { type: "text", text: "look" },
+    { type: "text", text: "carefully" },
+  ]);
+});
+
+test("splitMixedImageMessages：纯图段 / 纯文本段 / 字符串 content 不动", () => {
+  const img = { type: "image_url", image_url: { url: "data:image/png;base64,AAA" } };
+  // 纯图段：不拆
+  const onlyImg = [{ role: "user", content: [img] }];
+  assert.equal(splitMixedImageMessages(onlyImg), false);
+  assert.deepEqual(onlyImg[0].content, [img]);
+  // 纯文本段：不拆
+  const onlyText = [{ role: "user", content: [{ type: "text", text: "hi" }] }];
+  assert.equal(splitMixedImageMessages(onlyText), false);
+  // 字符串 content：不拆
+  const strContent = [{ role: "user", content: "plain" }];
+  assert.equal(splitMixedImageMessages(strContent), false);
+  // 非数组 messages：安全返回 false
+  assert.equal(splitMixedImageMessages(undefined), false);
+});
+
+test("splitMixedImageMessages：裸字符串文字也算文本段（magpie 实际形态）", () => {
+  const img = { type: "image_url", image_url: { url: "data:image/png;base64,AAA" } };
+  const messages = [
+    { role: "user", content: ["question text", img] },
+  ];
+  assert.equal(splitMixedImageMessages(messages), true);
+  assert.deepEqual(messages[0].content, [img]);
+  assert.deepEqual(messages[1].content, [{ type: "text", text: "question text" }]);
+});
+
+test("shapeRequestBody：chat 混合段在补 system 的同时被拆分", () => {
+  const img = { type: "image_url", image_url: { url: "data:image/png;base64,AAA" } };
+  const out = shapeRequestBody(
+    "https://x/deepai_code" + CHAT,
+    JSON.stringify({ messages: [{ role: "user", content: [{ type: "text", text: "look" }, img] }] }),
+  );
+  const parsed = JSON.parse(out);
+  assert.equal(parsed.messages.length, 3); // 补的 system + 图条 + 文字条
+  assert.equal(parsed.messages[0].role, "system");
+  assert.deepEqual(parsed.messages[1].content, [img]);
+  assert.deepEqual(parsed.messages[2].content, [{ type: "text", text: "look" }]);
+  // responses 的 input 混合段同样拆分
+  const outResp = shapeRequestBody(
+    "https://x/deepai_code/responses",
+    JSON.stringify({ input: [{ role: "user", content: [{ type: "input_text", text: "look" }, { type: "input_image", image_url: "data:image/png;base64,AAA" }] }] }),
+  );
+  const parsedResp = JSON.parse(outResp);
+  assert.equal(parsedResp.input.length, 2);
+  assert.deepEqual(parsedResp.input[0].content, [{ type: "input_image", image_url: "data:image/png;base64,AAA" }]);
+  assert.deepEqual(parsedResp.input[1].content, [{ type: "input_text", text: "look" }]);
 });
 
 test("guardResponse：409 session_busy → 429，Retry-After 夹到 30s", async () => {

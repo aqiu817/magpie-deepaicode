@@ -68,6 +68,13 @@ export function modeHeaders(settings) {
  * responses 必须带非空 instructions；缺失时上游回
  * 400 "This request is not one DeepAI Code sends."。
  * 只在缺的时候补一条最简 system / instructions，不改已有内容。
+ *
+ * 另一个上游约束（2026-11-26 对照 DeepAICode2API/桌面端实锤，issue #8）：
+ * chat 的 user content **不接受图与文字混在同一段**——混合段直接
+ * 400 "provider rejected"（或更早的另类失败表现）。桌面端 pi runtime
+ * 从不发混合段：带图消息的 content 只有图，文字在相邻消息里。
+ * 见到混合段时拆成两条 user 消息（图在前、文字在后），实测上游 200 且真识图。
+ *
  * 返回重写后的 JSON 字符串；没动返回 null。
  */
 export function shapeRequestBody(target, body) {
@@ -88,13 +95,48 @@ export function shapeRequestBody(target, body) {
       parsed.messages = [{ role: "system", content: SHAPE_SYSTEM_MESSAGE }, ...parsed.messages];
       changed = true;
     }
+    // 图与文字混在同一段 content：拆成 图 一条、文字 一条（顺序保持图在前）。
+    // 上游对混合段 400；拆分形态实测 200 且模型真收到图。
+    if (splitMixedImageMessages(parsed.messages)) changed = true;
   } else if (target.endsWith(RESPONSES_SUFFIX)) {
     if (typeof parsed.instructions !== "string" || parsed.instructions.trim() === "") {
       parsed.instructions = SHAPE_SYSTEM_MESSAGE;
       changed = true;
     }
+    // responses 的 input 数组同样可能带混合段
+    if (splitMixedImageMessages(parsed.input)) changed = true;
   }
   return changed ? JSON.stringify(parsed) : null;
+}
+
+/**
+ * 就地拆分 messages/input 数组里的"图+文字混合段"。
+ * 一段 content 数组同时含文字（text/input_text 对象或裸字符串）与图
+ * （image_url/input_image）时，重写为两条同 role 消息：
+ * 第一条只含全部图，第二条只含全部文字（裸字符串归一为 text 对象）。
+ * 返回是否有改动。
+ */
+export function splitMixedImageMessages(messages) {
+  if (!Array.isArray(messages)) return false;
+  let changed = false;
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (!msg || typeof msg !== "object" || !Array.isArray(msg.content)) continue;
+    const isImage = (p) => p && typeof p === "object" && (p.type === "image_url" || p.type === "input_image");
+    const isText = (p) => (typeof p === "string" && p.length > 0) || (p && typeof p === "object" && (p.type === "text" || p.type === "input_text"));
+    const images = msg.content.filter(isImage);
+    const texts = msg.content.filter(isText);
+    if (images.length === 0 || texts.length === 0) continue;
+    // 其余未知部分（若存在）跟随图段，保持信息不丢
+    const others = msg.content.filter((p) => !isImage(p) && !isText(p));
+    messages.splice(i, 1,
+      { ...msg, content: [...images, ...others] },
+      { ...msg, content: texts.map((p) => typeof p === "string" ? { type: "text", text: p } : p) },
+    );
+    changed = true;
+    i += 1; // 跳过刚插入的第二条
+  }
+  return changed;
 }
 
 function clampRetryAfter(headers) {
