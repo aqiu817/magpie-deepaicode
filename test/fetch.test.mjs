@@ -211,6 +211,91 @@ test("shapeRequestBody：chat 混合段在补 system 的同时被拆分", () => 
   assert.deepEqual(parsedResp.input[1].content, [{ type: "input_text", text: "look" }]);
 });
 
+test("loader.fetch：maxInputBytes 超限本地 400，不截断不打上游", async () => {
+  let calls = 0;
+  const loader = createLoader(directAuth(), { ...LANE_OPTS, maxInputBytes: 1000 }, {
+    fetchImpl: async () => {
+      calls += 1;
+      return new Response("{}");
+    },
+  });
+  const response = await loader.fetch("https://api.deepai.org/deepai_code" + CHAT, {
+    method: "POST",
+    body: JSON.stringify({ messages: [{ role: "system", content: "中文".repeat(200) }] }),
+  });
+  assert.equal(response.status, 400);
+  assert.equal(calls, 0);
+  const payload = await response.json();
+  assert.equal(payload.error.code, "context_length_exceeded");
+  assert.match(payload.error.message, /1000/);
+});
+
+test("loader.fetch：maxInputBytes 计数含 instructions/历史/tools，小请求原样透传", async () => {
+  const forwarded = [];
+  const loader = createLoader(directAuth(), { ...LANE_OPTS, maxInputBytes: 1000 }, {
+    fetchImpl: async (url, init) => {
+      forwarded.push(init.body);
+      return new Response("{}");
+    },
+  });
+  const small = JSON.stringify({ instructions: "只用中文", input: [{ role: "user", content: "你好" }] });
+  assert.equal((await loader.fetch("https://x/responses", { body: small })).status, 200);
+  assert.equal(forwarded[0], small);
+  const large = JSON.stringify({ instructions: "中文", input: [], tools: [{ description: "文".repeat(500) }] });
+  const refused = await loader.fetch("https://x/responses?beta=1", { body: large });
+  assert.equal(refused.status, 400);
+  assert.equal(forwarded.length, 1);
+});
+
+test("loader.fetch：maxInputBytes 默认关闭（0）不设限", async () => {
+  const loader = createLoader(directAuth(), LANE_OPTS, { fetchImpl: async () => new Response("{}") });
+  const body = JSON.stringify({ instructions: "x".repeat(2000), input: [] });
+  assert.equal((await loader.fetch("https://x/responses", { body })).status, 200);
+});
+
+test("loader.fetch：上限按整形后实发字节计（含补的 system），边界值恰好放行", async () => {
+  let calls = 0;
+  const original = JSON.stringify({ messages: [{ role: "user", content: "你好" }] });
+  const shaped = shapeRequestBody("https://x" + CHAT, original);
+  const bytes = new TextEncoder().encode(shaped).byteLength;
+  const upstream = async () => { calls += 1; return new Response("{}"); };
+  const strict = createLoader(directAuth(), { ...LANE_OPTS, maxInputBytes: bytes - 1 }, { fetchImpl: upstream });
+  assert.equal((await strict.fetch("https://x" + CHAT, { body: original })).status, 400);
+  assert.equal(calls, 0);
+  const exact = createLoader(directAuth(), { ...LANE_OPTS, maxInputBytes: bytes }, { fetchImpl: upstream });
+  assert.equal((await exact.fetch("https://x" + CHAT, { body: original })).status, 200);
+  assert.equal(calls, 1);
+});
+
+test("loader.fetch：超限拒绝不触发车道探测（auto 也不探测）", async () => {
+  let calls = 0;
+  const loader = createLoader(directAuth(), { maxInputBytes: 100 }, {
+    fetchImpl: async () => { calls += 1; return new Response("{}"); },
+  });
+  await loader.fetch("https://x" + CHAT, { body: "x".repeat(101) });
+  assert.equal(calls, 0);
+});
+
+test("loader.fetch：启用护栏后非字符串 body 无法绕过", async () => {
+  let calls = 0;
+  const loader = createLoader(directAuth(), { ...LANE_OPTS, maxInputBytes: 100 }, {
+    fetchImpl: async () => { calls += 1; return new Response("{}"); },
+  });
+  const response = await loader.fetch("https://x" + CHAT, { body: new Uint8Array(101) });
+  assert.equal(response.status, 400);
+  assert.equal(calls, 0);
+  const request = new Request("https://x" + CHAT, { method: "POST", body: "x".repeat(101) });
+  assert.equal((await loader.fetch(request)).status, 400);
+  assert.equal(calls, 0);
+});
+
+test("shapeRequestBody：带 query string 的端点同样整形", () => {
+  const chat = JSON.parse(shapeRequestBody("https://x" + CHAT + "?beta=1", JSON.stringify({ messages: [{ role: "user", content: "你好" }] })));
+  assert.equal(chat.messages[0].role, "system");
+  const responses = JSON.parse(shapeRequestBody("https://x/responses?beta=1", JSON.stringify({ input: [] })));
+  assert.ok(responses.instructions);
+});
+
 test("guardResponse：409 session_busy → 429，Retry-After 夹到 30s", async () => {
   const res = await guardResponse(
     new Response('{"error":{"code":"session_busy"}}', {

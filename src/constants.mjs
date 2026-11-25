@@ -105,6 +105,9 @@ export const FALLBACK_SNAPSHOT_DATE = "2026-11-23";
 
 export const DEFAULT_OPTIONS = {
   baseOrigin: DEFAULT_BASE_ORIGIN,
+  /** 输入字节护栏：外发 JSON 的 UTF-8 字节上限（整形后实发计）。0 = 关闭。
+   * 超限本地 400 context_length_exceeded，不截断不打上游（issue #11 的本机防线，字节数不是 token 数）。 */
+  maxInputBytes: 0,
   /** "auto"：按 LANE_PROBE_SEQUENCE 探测 /models（2026-11-14 起需带 key）取当前受理值并进程内缓存；显式值原样生效 */
   laneVersion: "auto",
   /** 界面语言：zh | en */

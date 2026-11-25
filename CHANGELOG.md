@@ -3,7 +3,7 @@
 ## 0.2.7 — 2026-11-26
 
 **图像输入修复**（回应 [#8](https://github.com/aqiu817/magpie-deepaicode/issues/8) 与
-DeepAICode2API 的对照实验，致谢 Makuraryu 的追问与 QingLong-C 无关）：
+DeepAICode2API 的对照实验，致谢 Makuraryu 的追问）：
 
 - **根因找到**：上游 `/deepai_code/chat/completions` **不接受图与文字混在同一段
   content**（标准 OpenAI 多模态形态）——混合段会被拒绝或静默剥图。桌面端 pi
@@ -17,6 +17,23 @@ DeepAICode2API 的对照实验，致谢 Makuraryu 的追问与 QingLong-C 无关
 - **如实说明**：上游对拆分形态也**不是 100% 稳定**（偶发仍剥图），这是上游
   服务端问题；但修复把成功率从"基本不可用"提升到"多数请求成功"。
 - 测试 71 个（+8：拆分边界、裸字符串形态、responses input、端到端整形）。
+
+**输入字节护栏**（[#12](https://github.com/aqiu817/magpie-deepaicode/pull/12)
+QingLong-C 的方案，经 maintainer 复核后并入）：
+
+- **可选护栏 `maxInputBytes`**（默认 `0` 关闭）：外发请求 JSON 的 UTF-8 字节上限
+  （按整形后实发计，含补写的 system / instructions、历史、工具与图片）。超限本地
+  `400 context_length_exceeded`——不截断、不打上游、不触发车道探测。
+  针对 issue #11（上游对超长输入静默压缩、中段丢失）的本机防线：字节数不是
+  token 数，护栏不修复上游、也不自动压缩会话；启用后非字符串请求体直接拒绝，
+  避免绕过检查。
+- **端点带 query string 也整形**：`shapeRequestBody` 此前按整条 URL 尾巴匹配，
+  `/chat/completions?beta=1` 这类带查询串的端点会漏掉 system / instructions 补齐
+  与混合段拆分；改为按 URL `pathname` 判定。
+- **车道探测惰性化**：`createLoader` 不再在构造时立即发起车道探测，首次 fetch
+  才探测（缓存 Promise 不变）。护栏拒绝的请求不会再触发对上游的探测请求。
+- 文案走 i18n（中英），测试 71 → 78（护栏 6 + query-string 整形 1，迁移自 #12
+  并适配本项目 i18n 与混合段拆分）。
 
 ## 0.2.6 — 2026-11-23
 

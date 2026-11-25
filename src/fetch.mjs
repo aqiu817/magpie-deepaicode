@@ -88,7 +88,8 @@ export function shapeRequestBody(target, body) {
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
 
   let changed = false;
-  if (target.endsWith(CHAT_SUFFIX) && Array.isArray(parsed.messages) && parsed.messages.length > 0) {
+  const pathname = new URL(target).pathname;
+  if (pathname.endsWith(CHAT_SUFFIX) && Array.isArray(parsed.messages) && parsed.messages.length > 0) {
     const first = parsed.messages[0];
     const role = first && typeof first === "object" ? String(first.role ?? "") : "";
     if (role !== "system" && role !== "developer") {
@@ -98,7 +99,7 @@ export function shapeRequestBody(target, body) {
     // 图与文字混在同一段 content：拆成 图 一条、文字 一条（顺序保持图在前）。
     // 上游对混合段 400；拆分形态实测 200 且模型真收到图。
     if (splitMixedImageMessages(parsed.messages)) changed = true;
-  } else if (target.endsWith(RESPONSES_SUFFIX)) {
+  } else if (pathname.endsWith(RESPONSES_SUFFIX)) {
     if (typeof parsed.instructions !== "string" || parsed.instructions.trim() === "") {
       parsed.instructions = SHAPE_SYSTEM_MESSAGE;
       changed = true;
@@ -156,8 +157,8 @@ function rebuildResponse(res, { status = res.status, body = null, extraHeaders =
   return new Response(body, { status, statusText: res.statusText || "", headers });
 }
 
-function jsonError(status, message, type = "invalid_request_error") {
-  return new Response(JSON.stringify({ error: { message, type, code: status } }), {
+function jsonError(status, message, type = "invalid_request_error", code = status) {
+  return new Response(JSON.stringify({ error: { message, type, code } }), {
     status,
     headers: { "content-type": "application/json; charset=utf-8" },
   });
@@ -239,8 +240,9 @@ export function createLoader(auth, options = {}, { fetchImpl = globalThis.fetch 
   const targets = loaderTargets(settings);
   const headers = modeHeaders(settings);
   const lang = resolveLang(options);
-  // laneVersion: "auto" 时这里会发起探测（每 origin 进程内一次；/models 也要求鉴权，带上 key）；显式值直接兑现
-  const laneP = resolveLaneVersion(settings.origin, { explicit: settings.laneVersion, fetchImpl, key: settings.key });
+  // 车道探测改为惰性：首次 fetch 时才发起（显式值直接兑现；auto 探测每 origin
+  // 进程内缓存一次，带 key）。护栏拒绝发生得更早，不应为被拒的请求去打上游。
+  let laneP;
 
   const loader = {
     baseURL: targets.baseURL,
@@ -250,6 +252,30 @@ export function createLoader(auth, options = {}, { fetchImpl = globalThis.fetch 
       // URL 一律从配置的基地址重建：magpie 传进来的主机/路径只用来判断
       // 是 chat 还是 responses，凭据永远不会被发往别的主机。
       const target = normalizeIncomingUrl(input, settings);
+
+      // 可选护栏 maxInputBytes（issue #11 的本机防线，QingLong-C 方案）：
+      // 按整形后的实际外发 JSON 计 UTF-8 字节，超限在本地拒绝
+      // （400 context_length_exceeded），不截断、不打上游、不触发车道探测。
+      // 字节数不是 token 数：护栏只是防超长输入静默丢上下文的保守闸门，
+      // 不修复上游、不压缩会话。关闭（0）时零开销。
+      const maxInputBytes = Number(options.maxInputBytes);
+      const guarded = Number.isSafeInteger(maxInputBytes) && maxInputBytes > 0;
+      if (guarded && ((init?.body != null && typeof init.body !== "string") || (input instanceof Request && init.body == null && input.body))) {
+        return jsonError(400, t(lang, "errGuardNeedsString"));
+      }
+
+      // 上游校验请求形状：缺 system / instructions 时补最简值；
+      // 图+文混合段拆成两条（上游不接受混合段）。
+      const shaped = shapeRequestBody(target, init?.body);
+      const outgoing = shaped === null ? init : { ...init, body: shaped };
+      if (guarded && typeof outgoing.body === "string") {
+        const inputBytes = new TextEncoder().encode(outgoing.body).byteLength;
+        if (inputBytes > maxInputBytes) {
+          return jsonError(400, t(lang, "errGuardOverLimit", { bytes: String(inputBytes), limit: String(maxInputBytes) }), "invalid_request_error", "context_length_exceeded");
+        }
+      }
+
+      laneP ??= resolveLaneVersion(settings.origin, { explicit: settings.laneVersion, fetchImpl, key: settings.key });
       const lane = await laneP;
 
       const merged = new Headers(init?.headers ?? {});
@@ -258,10 +284,6 @@ export function createLoader(auth, options = {}, { fetchImpl = globalThis.fetch 
       if (settings.machineFp) {
         merged.set(HEADER_MACHINE, settings.machineFp);
       }
-
-      // 上游校验请求形状：缺 system / instructions 时补最简值
-      const shaped = shapeRequestBody(target, init?.body);
-      const outgoing = shaped === null ? init : { ...init, body: shaped };
 
       let res;
       try {

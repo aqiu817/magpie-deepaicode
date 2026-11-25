@@ -23,6 +23,8 @@ const MESSAGES = {
     errLane: "上游不接受当前车道版本（426）。把选项 laneVersion 调成上游要求的值，或更新插件。",
     errTimeout: "操作超时，请重试。",
     errRedirect: "上游把请求重定向到了登录页（鉴权失败）。请重新登录。",
+    errGuardNeedsString: "已启用输入字节护栏（maxInputBytes），该护栏要求 JSON 字符串请求体；当前请求体无法安全检查。",
+    errGuardOverLimit: "DeepAI Code 输入为 {bytes} 字节，超过本机安全上限 {limit}。请压缩会话或换用其他渠道；上游可能对超长输入静默丢失上下文。",
 
     usageTodayName: "今日 Theos",
     usagePending: "今日额度待发放",
@@ -62,6 +64,8 @@ const MESSAGES = {
     errLane: "Upstream rejected the lane version (426). Set the laneVersion option to the expected value.",
     errTimeout: "Timed out. Please retry.",
     errRedirect: "Upstream redirected to the sign-in page (auth failed). Please sign in again.",
+    errGuardNeedsString: "The input byte guard (maxInputBytes) requires a JSON string body; this body cannot be checked safely.",
+    errGuardOverLimit: "DeepAI Code input is {bytes} bytes, above the configured safety limit of {limit}. Compact the conversation or use another provider; oversized inputs may silently lose context upstream.",
 
     usageTodayName: "Today's theos",
     usagePending: "Today's grant not issued yet",
