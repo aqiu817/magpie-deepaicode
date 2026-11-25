@@ -140,6 +140,9 @@ test("buildDirectUsage：正常额度 / 未发放", () => {
   // amount 是“已用量”（granted - balance），不是剩余：200/200 即已用 0
   assert.equal(usage.windows[0].amount, 0);
   assert.equal(usage.windows[0].limit, 200);
+  // amount=0 会被 magpie core 当成“没给计数”（text-only、路由跳过）；
+  // 必须显式给 used（PR #10）——满额时 used=0 是真实读数，不是“不知道”
+  assert.equal(usage.windows[0].used, 0);
   assert.ok(usage.balance.includes("12.4"));
 
   const pending = buildDirectUsage({
@@ -148,6 +151,7 @@ test("buildDirectUsage：正常额度 / 未发放", () => {
   });
   assert.equal(pending.windows[0].amount, undefined);
   assert.equal(pending.windows[0].limit, undefined);
+  assert.equal(pending.windows[0].used, undefined);
 
   // 额度用完：已用 = 总额度
   const spent = buildDirectUsage({
@@ -156,6 +160,23 @@ test("buildDirectUsage：正常额度 / 未发放", () => {
   });
   assert.equal(spent.windows[0].amount, 200);
   assert.equal(spent.windows[0].limit, 200);
+  assert.equal(spent.windows[0].used, 100);
+});
+
+test("buildDirectUsage：部分使用窗口给对应 used 百分比（PR #10）", () => {
+  // 报告者 lan1569006502 的形态：约 14 小时后重置，credits 余额 0
+  const usage = buildDirectUsage({
+    allowance: normalizeAllowance({ enabled: true, balance: "39", granted: "78", refresh_at: "2026-11-21T19:17:13Z" }),
+    summary: { credits_remaining: 0 },
+    lang: "zh",
+  });
+  const window = usage.windows[0];
+  assert.equal(window.amount, 39);
+  assert.equal(window.used, 50);
+  assert.equal(window.limit, 78);
+  assert.equal(window.display, "剩 39 / 78 theos");
+  // normalizeAllowance 会把 refresh_at 归一成带毫秒的 RFC 3339
+  assert.equal(window.resetsAt, "2026-11-21T19:17:13.000Z");
 });
 
 test("buildDirectCheckin：四分支", () => {

@@ -35,6 +35,22 @@ QingLong-C 的方案，经 maintainer 复核后并入）：
 - 文案走 i18n（中英），测试 71 → 78（护栏 6 + query-string 整形 1，迁移自 #12
   并适配本项目 i18n 与混合段拆分）。
 
+**满额额度窗口显示“剩余额度未知”的修复**
+（[#10](https://github.com/aqiu817/magpie-deepaicode/pull/10) keuio 的方案，
+经 maintainer 对照 magpie core 源码核实后并入）：
+
+- **`buildDirectUsage` 现在同时发送 `used`（已用百分比）**：`granted > 0` 时
+  窗口带 `used = (granted - balance) / granted * 100`。此前满额窗口只发
+  `amount: 0`，而 magpie core 的 `quotaOfPlugin` 把 `amount = 0` 当作
+  "窗口还没给计数"（core 原话：*An amount of 0 is what a count left out
+  reads as*），把窗口退化成 text-only，`allowanceOf` 在路由时直接跳过——
+  满额账号（剩 78 / 78 theos）于是显示"剩余额度未知"。
+- `used` 是从厂商真实读数（balance/granted）算出的百分比，不是编造读数；
+  满额 78/78 → `used: 0`，部分使用 39/78 → `used: 50`，UI 的 `display` 与
+  `resetsAt` 不变。`granted = 0`（未发放）时仍然不发，保持"没读数"语义。
+- 测试 78 → 79（满额/部分使用/未发放三类断言，迁移自 #10 并适配
+  normalizeAllowance 路径）。
+
 ## 0.2.6 — 2026-11-23
 
 回应 [issue #11](https://github.com/aqiu817/magpie-deepaicode/issues/11)（目录 1M vs 实测截断）：

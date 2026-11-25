@@ -1,9 +1,14 @@
 // 额度与签到的输出构造。
 //
-// 两个约束来自 magpie 文档：
-//   1) 厂商没给出用量就不要传 used，也不要用 0 表示“不知道”；
-//   2) 有 amount + limit 时 magpie 自己算 used（limit - amount）。
-// 所以：只有 granted > 0 才给 amount/limit，否则只给 display。
+// 约束来自 magpie 文档与 core 源码（internal/provider/plugin_usage.go 的
+// quotaOfPlugin / routing.go 的 allowanceOf）：
+//   1) 厂商没给出用量就不要用 0 表示“不知道”；
+//   2) 有 amount + limit 且 amount > 0 时 magpie 自己算 used；但 amount = 0
+//      会被 core 当成“窗口还没给计数”（core 原话：An amount of 0 is what a
+//      count left out reads as），整窗退化成 text-only，allowanceOf 直接跳过，
+//      路由显示“剩余额度未知”（PR #10）。
+// 所以：granted > 0 时同时给 used（已用百分比）——厂商真实给出了 balance/granted，
+// 百分比是从真实读数算的，不是编造；这样满额窗口（amount = 0）也有读数。
 
 import { t } from "./i18n.mjs";
 import { formatNumber, toNumber } from "./util.mjs";
@@ -39,8 +44,12 @@ export function buildDirectUsage({ allowance, summary, username = "", lang = "zh
   };
   if (granted > 0) {
     // magpie 的 amount 是“窗口内的已用量”，不是剩余量：已用 = 总额度 - 余额。
-    window.amount = Math.max(0, granted - balance);
+    // amount 为 0 时 core 会当作没有读数（见文件头注释）；显式补 used，
+    // 满额窗口（剩 78 / 78）才不会被标成“额度未知”。
+    const consumed = Math.max(0, granted - balance);
+    window.amount = consumed;
     window.limit = granted;
+    window.used = (consumed / granted) * 100;
   }
   if (allowance.refreshAt) window.resetsAt = allowance.refreshAt;
 
